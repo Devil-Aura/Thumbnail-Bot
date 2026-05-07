@@ -4,3 +4,4 @@ motor
 pymongo
 Pillow
 aiohttp
+requests
