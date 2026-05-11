@@ -487,11 +487,12 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
 
 # ── Link collection ───────────────────────────────────────────────────────────
-@Client.on_message(
-    filters.private & ~filters.command & filters.regex(r"https?://\S+")
-)
+@Client.on_message(filters.private & filters.regex(r"https?://\S+"))
 async def link_handler(client: Client, message: Message):
     uid = message.from_user.id
+    # Ignore commands and users not awaiting a link
+    if message.text and message.text.startswith("/"):
+        return
     if uid not in pending_link or uid not in post_sessions:
         return
 
