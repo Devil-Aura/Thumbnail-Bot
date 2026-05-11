@@ -3,10 +3,10 @@
 
 Flow:
   1. Preview thumbnail  →  pan/zoom/image-swap controls
-  2. ✅ Done            →  spoiler 4K BG + AniList expandable info
-                        →  thumbnail + Powered-By + [📢 Main Post] button
-  3. [📢 Main Post]     →  ask for Watch & Download link
-  4. User sends link    →  final post thumbnail with button
+  2. ✅ Done  →  spoiler 4K BG + AniList expandable info
+             →  thumbnail + "Powered By" message + [📢 Main Post] button
+  3. [📢 Main Post]  →  ask for Watch & Download link
+  4. User sends link  →  final post thumbnail with URL button
 """
 import io
 import logging
@@ -37,9 +37,9 @@ FANART_BASE = "https://webservice.fanart.tv/v3"
 CHANNEL     = "CrunchyRollChannel"
 
 # ── State ─────────────────────────────────────────────────────────────────────
-sessions:      dict[int, dict] = {}   # uid → thumbnail preview session
-post_sessions: dict[int, dict] = {}   # uid → post data (after Done)
-pending_link:  set[int]        = set()  # uids awaiting Watch link
+sessions:      dict[int, dict] = {}
+post_sessions: dict[int, dict] = {}
+pending_link:  set[int]        = set()
 
 STEP_PX    = 60
 STEP_SCALE = 0.15
@@ -50,57 +50,56 @@ def _powered_caption(ps: dict) -> str:
     genres = ", ".join(ps["genres"][:5]) or "N/A"
     return (
         f"⛩ <b>{ps['title']} [S{ps['season']:02d}]</b>\n"
-        "<blockquote>"
-        "╭───────────────────\n"
-        f"├ ✨ Ratings - {ps['rating']} IMDB\n"
-        f"├ ❄️ Season - {ps['season']:02d}\n"
-        f"├ 🎬 Episodes - {ps['episodes']}\n"
-        f"├ 🔈 Audio - {ps['audio']}\n"
-        f"├ 📸 Quality - {ps['quality']}\n"
-        f"├ 🎭 Genres - {genres}\n"
-        "╰───────────────────"
-        "</blockquote>\n"
+        f"<blockquote>"
+        f"╭───────────────────\n"
+        f"├ ✨ <b>Ratings</b> - {ps['rating']} IMDB\n"
+        f"├ ❄️ <b>Season</b> - {ps['season']:02d}\n"
+        f"├ 🎬 <b>Episodes</b> - {ps['episodes']}\n"
+        f"├ 🔈 <b>Audio</b> - {ps['audio']}\n"
+        f"├ 📸 <b>Quality</b> - {ps['quality']}\n"
+        f"├ 🎭 <b>Genres</b> - {genres}\n"
+        f"╰───────────────────"
+        f"</blockquote>\n"
         f"• <b>𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗕𝘆:</b> @{CHANNEL}."
     )
 
 
-def _final_caption(ps: dict) -> str:
+def _final_caption(ps: dict, link: str) -> str:
     genres = ", ".join(ps["genres"][:5]) or "N/A"
     return (
         f"⛩ <b>{ps['title']} [S{ps['season']:02d}]</b>\n"
-        "<blockquote>"
-        "╭───────────────────\n"
-        f"├ ✨ Ratings - {ps['rating']} IMDB\n"
-        f"├ ❄️ Season - {ps['season']:02d}\n"
-        f"├ 🎬 Episodes - {ps['episodes']}\n"
-        f"├ 🔈 Audio - {ps['audio']}\n"
-        f"├ 📸 Quality - {ps['quality']}\n"
-        f"├ 🎭 Genres - {genres}\n"
-        "├───────────────────\n"
-        "├ ⭕️ Watch &amp; Download ⭕️\n"
-        "╰──────────────────"
-        "</blockquote>\n"
-        "<b>New Anime In Official Hindi Dub 🔥</b>"
+        f"<blockquote>"
+        f"╭───────────────────\n"
+        f"├ ✨ <b>Ratings</b> - {ps['rating']} IMDB\n"
+        f"├ ❄️ <b>Season</b> - {ps['season']:02d}\n"
+        f"├ 🎬 <b>Episodes</b> - {ps['episodes']}\n"
+        f"├ 🔈 <b>Audio</b> - {ps['audio']}\n"
+        f"├ 📸 <b>Quality</b> - {ps['quality']}\n"
+        f"├ 🎭 <b>Genres</b> - {genres}\n"
+        f"├───────────────────\n"
+        f"├ ⭕️ <a href='{link}'><b>Watch &amp; Download</b></a> ⭕️\n"
+        f"╰──────────────────"
+        f"</blockquote>\n"
+        f"<b>New Anime In Official Hindi Dub 🔥</b>"
     )
 
 
 def _anilist_caption(al: dict, anime_title: str) -> str:
-    genres  = ", ".join(al["genres"][:6]) if al["genres"] else "N/A"
-    syn     = al["synopsis"]
+    genres = ", ".join(al["genres"][:6]) if al["genres"] else "N/A"
+    syn    = al["synopsis"]
     if len(syn) > 850:
         syn = syn[:850] + "…"
-    end = al["end"] or ""
     inner = (
         f"<b>{al['display']}</b>\n\n"
-        f"‣ Genres : {genres}\n"
-        f"‣ Type : {al['format']}\n"
-        f"‣ Average Rating : {al['score']}\n"
-        f"‣ Status : {al['status']}\n"
-        f"‣ First aired : {al['start']}\n"
-        f"‣ Last aired : {end}\n"
-        f"‣ Runtime : {al['duration']} minutes\n"
-        f"‣ No of episodes : {al['episodes']}\n\n"
-        f'‣ Synopsis : "{syn}"'
+        f"‣ <b>Genres</b> : {genres}\n"
+        f"‣ <b>Type</b> : {al['format']}\n"
+        f"‣ <b>Average Rating</b> : {al['score']}\n"
+        f"‣ <b>Status</b> : {al['status']}\n"
+        f"‣ <b>First aired</b> : {al['start']}\n"
+        f"‣ <b>Last aired</b> : {al['end'] or ''}\n"
+        f"‣ <b>Runtime</b> : {al['duration']} minutes\n"
+        f"‣ <b>No of episodes</b> : {al['episodes']}\n\n"
+        f"‣ <b>Synopsis</b> : \"{syn}\""
     )
     return (
         f"<b>{anime_title} In Hindi Dub Available On @{CHANNEL}...!!</b>\n"
@@ -116,44 +115,42 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
     pct = int(s["scale"] * 100)
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("◀️ ᴩʀᴇᴠ",     callback_data=f"an|prev|{uid}"),
+            InlineKeyboardButton("◀️ ᴩʀᴇᴠ",        callback_data=f"an|prev|{uid}"),
             InlineKeyboardButton(f"🖼 {idx+1}/{tot}", callback_data="an|noop"),
-            InlineKeyboardButton("ɴᴇxᴛ ▶️",      callback_data=f"an|next|{uid}"),
+            InlineKeyboardButton("ɴᴇxᴛ ▶️",         callback_data=f"an|next|{uid}"),
         ],
         [
-            InlineKeyboardButton("　",  callback_data="an|noop"),
-            InlineKeyboardButton("⬆️",  callback_data=f"an|up|{uid}"),
-            InlineKeyboardButton("　",  callback_data="an|noop"),
+            InlineKeyboardButton("​",  callback_data="an|noop"),
+            InlineKeyboardButton("⬆️", callback_data=f"an|up|{uid}"),
+            InlineKeyboardButton("​",  callback_data="an|noop"),
         ],
         [
-            InlineKeyboardButton("⬅️",  callback_data=f"an|left|{uid}"),
-            InlineKeyboardButton("⬇️",  callback_data=f"an|down|{uid}"),
-            InlineKeyboardButton("➡️",  callback_data=f"an|right|{uid}"),
+            InlineKeyboardButton("⬅️", callback_data=f"an|left|{uid}"),
+            InlineKeyboardButton("⬇️", callback_data=f"an|down|{uid}"),
+            InlineKeyboardButton("➡️", callback_data=f"an|right|{uid}"),
         ],
         [
-            InlineKeyboardButton("➖",           callback_data=f"an|zout|{uid}"),
-            InlineKeyboardButton(f"🔍 {pct}%",   callback_data="an|noop"),
-            InlineKeyboardButton("➕",           callback_data=f"an|zin|{uid}"),
+            InlineKeyboardButton("➖",          callback_data=f"an|zout|{uid}"),
+            InlineKeyboardButton(f"🔍 {pct}%",  callback_data="an|noop"),
+            InlineKeyboardButton("➕",          callback_data=f"an|zin|{uid}"),
         ],
-        [
-            InlineKeyboardButton("✅ ᴅᴏɴᴇ", callback_data=f"an|done|{uid}"),
-        ],
+        [InlineKeyboardButton("✅  ᴅᴏɴᴇ", callback_data=f"an|done|{uid}")],
     ])
 
 
 def _powered_kb(uid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 ᴍᴀɪɴ ᴘᴏꜱᴛ", callback_data=f"an|mainpost|{uid}")],
+        [InlineKeyboardButton("📢  ᴍᴀɪɴ ᴘᴏꜱᴛ", callback_data=f"an|mainpost|{uid}")],
     ])
 
 
 def _final_kb(link: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⭕️ ᴡᴀᴛᴄʜ & ᴅᴏᴡɴʟᴏᴀᴅ ⭕️", url=link)],
+        [InlineKeyboardButton("⭕️  ᴡᴀᴛᴄʜ & ᴅᴏᴡɴʟᴏᴀᴅ  ⭕️", url=link)],
     ])
 
 
-# ── Network helpers ───────────────────────────────────────────────────────────
+# ── Network helpers ────────────────────────────────────────────────────────────
 async def _tmdb(sess: aiohttp.ClientSession, path: str, **params) -> dict:
     params["api_key"] = TMDB_API_KEY
     async with sess.get(
@@ -176,8 +173,8 @@ async def _download(url: str) -> Optional[bytes]:
 
 async def _fetch_data(name: str, season: int) -> dict:
     async with aiohttp.ClientSession() as sess:
-        search  = await _tmdb(sess, "/search/tv", query=name, language="en-US")
-        results = search.get("results", [])
+        search   = await _tmdb(sess, "/search/tv", query=name, language="en-US")
+        results  = search.get("results", [])
         is_movie = False
         if not results:
             search   = await _tmdb(sess, "/search/movie", query=name, language="en-US")
@@ -277,7 +274,7 @@ async def _render(s: dict) -> Optional[bytes]:
     )
 
 
-# ── /anime command ────────────────────────────────────────────────────────────
+# ── /anime command ─────────────────────────────────────────────────────────────
 @Client.on_message(filters.command("anime") & filters.private)
 async def anime_cmd(client: Client, message: Message):
     raw = " ".join(message.command[1:]).strip()
@@ -334,7 +331,7 @@ async def anime_cmd(client: Client, message: Message):
     await message.reply_photo(
         photo=io.BytesIO(thumb),
         caption=(
-            f"🎨 <b>{data['title']}</b> — S{data['season']:02d} | "
+            f"🎨 <b>{data['title']}</b> — S{data['season']:02d}\n"
             f"<i>{', '.join(data['genres'][:3])}</i>\n\n"
             "⬆️⬇️⬅️➡️ ᴘᴀɴ  •  ➕➖ ᴢᴏᴏᴍ  •  ◀️▶️ ꜱᴡᴀᴘ ɪᴍᴀɢᴇ"
         ),
@@ -343,7 +340,7 @@ async def anime_cmd(client: Client, message: Message):
     )
 
 
-# ── Callback handler ──────────────────────────────────────────────────────────
+# ── Callback handler ───────────────────────────────────────────────────────────
 @Client.on_callback_query(filters.regex(r"^an\|"))
 async def anime_cb(client: Client, cq: CallbackQuery):
     parts  = cq.data.split("|")
@@ -355,20 +352,20 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     uid = int(parts[2])
 
-    # ── Main Post callback (after Done) ──────────────────────────────────────
+    # ── Main Post ──────────────────────────────────────────────────────────────
     if action == "mainpost":
         if uid not in post_sessions:
             await cq.answer("ꜱᴇꜱꜱɪᴏɴ ᴇxᴘɪʀᴇᴅ.", show_alert=True)
             return
         pending_link.add(uid)
         await cq.message.reply_text(
-            "🔗 <b>ꜱᴇɴᴅ ᴛʜᴇ ᴡᴀᴛᴄʜ &amp; ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ:</b>",
+            "🔗 <b>ꜱᴇɴᴅ ᴛʜᴇ ᴡᴀᴛᴄʜ &amp; ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ɴᴏᴡ:</b>",
             parse_mode=enums.ParseMode.HTML,
         )
-        await cq.answer()
+        await cq.answer("📨 ꜱᴇɴᴅ ᴛʜᴇ ʟɪɴᴋ ʙᴇʟᴏᴡ ↓")
         return
 
-    # ── Preview controls ──────────────────────────────────────────────────────
+    # ── Preview controls ───────────────────────────────────────────────────────
     if uid not in sessions:
         await cq.answer("ꜱᴇꜱꜱɪᴏɴ ᴇxᴘɪʀᴇᴅ. ᴜꜱᴇ /anime ᴀɢᴀɪɴ.", show_alert=True)
         return
@@ -381,30 +378,24 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     if action == "prev":
         s["img_idx"] = (s["img_idx"] - 1) % len(s["images"])
-        s["offset_x"] = s["offset_y"] = 0
-        await cq.answer("◀️")
+        s["offset_x"] = s["offset_y"] = 0;  await cq.answer("◀️")
     elif action == "next":
         s["img_idx"] = (s["img_idx"] + 1) % len(s["images"])
-        s["offset_x"] = s["offset_y"] = 0
-        await cq.answer("▶️")
+        s["offset_x"] = s["offset_y"] = 0;  await cq.answer("▶️")
     elif action == "up":
-        s["offset_y"] = max(0, s["offset_y"] - STEP_PX)
-        await cq.answer("⬆️")
+        s["offset_y"] = max(0, s["offset_y"] - STEP_PX);  await cq.answer("⬆️")
     elif action == "down":
-        s["offset_y"] += STEP_PX
-        await cq.answer("⬇️")
+        s["offset_y"] += STEP_PX;  await cq.answer("⬇️")
     elif action == "left":
-        s["offset_x"] = max(0, s["offset_x"] - STEP_PX)
-        await cq.answer("⬅️")
+        s["offset_x"] = max(0, s["offset_x"] - STEP_PX);  await cq.answer("⬅️")
     elif action == "right":
-        s["offset_x"] += STEP_PX
-        await cq.answer("➡️")
+        s["offset_x"] += STEP_PX;  await cq.answer("➡️")
     elif action == "zin":
         s["scale"] = min(3.0, round(s["scale"] + STEP_SCALE, 2))
-        await cq.answer(f"➕ {int(s['scale']*100)}%")
+        await cq.answer(f"🔍 {int(s['scale']*100)}%")
     elif action == "zout":
         s["scale"] = max(1.0, round(s["scale"] - STEP_SCALE, 2))
-        await cq.answer(f"➖ {int(s['scale']*100)}%")
+        await cq.answer(f"🔍 {int(s['scale']*100)}%")
 
     elif action == "done":
         redraw = False
@@ -412,43 +403,43 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
         thumb = await _render(s)
         if not thumb:
-            await cq.message.edit_caption("❌ Render failed. Try a different image ▶️")
+            await cq.message.edit_caption(
+                "❌ Render failed. Try a different image ▶️",
+                parse_mode=enums.ParseMode.HTML,
+            )
             return
 
+        # Save thumbnail URL to DB
         await client.db.set_thumbnail(uid, s["images"][s["img_idx"]])
 
+        # Build post session
         post_sessions[uid] = {
-            "title":      s["title"],
-            "year":       s["year"],
-            "rating":     s["rating"],
-            "episodes":   s["episodes"],
-            "genres":     s["genres"],
-            "season":     s["season"],
-            "audio":      s["audio"],
-            "quality":    s["quality"],
-            "fanart_bgs": s["fanart_bgs"],
-            "thumb":      thumb,
+            k: s[k] for k in
+            ("title","year","rating","episodes","genres",
+             "season","audio","quality","fanart_bgs")
         }
+        post_sessions[uid]["thumb"] = thumb
         sessions.pop(uid, None)
+
+        # Remove inline keyboard from preview
         await cq.message.edit_reply_markup(reply_markup=None)
 
-        # Step 1 — spoiler image + AniList expandable info (run concurrently)
-        al, bg_url = None, None
-        al = await fetch_anilist(post_sessions[uid]["title"])
-        bg_urls = post_sessions[uid]["fanart_bgs"]
-        bg_url  = random.choice(bg_urls) if bg_urls else None
-        bg_bytes = await _download(bg_url) if bg_url else None
+        # Step 1 — Spoiler image + AniList info
+        ps      = post_sessions[uid]
+        al      = await fetch_anilist(ps["title"])
+        bg_urls = ps["fanart_bgs"]
+        bg_bytes = await _download(random.choice(bg_urls)) if bg_urls else None
+        spoiler  = make_spoiler_bg(bg_bytes, CHANNEL) if bg_bytes else None
 
-        spoiler_img = make_spoiler_bg(bg_bytes, CHANNEL) if bg_bytes else None
         al_cap = (
-            _anilist_caption(al, post_sessions[uid]["title"])
+            _anilist_caption(al, ps["title"])
             if al
-            else f"<b>{post_sessions[uid]['title']} In Hindi Dub Available On @{CHANNEL}...!!</b>"
+            else f"<b>{ps['title']} In Hindi Dub Available On @{CHANNEL}...!!</b>"
         )
 
-        if spoiler_img:
+        if spoiler:
             await cq.message.reply_photo(
-                photo=io.BytesIO(spoiler_img),
+                photo=io.BytesIO(spoiler),
                 caption=al_cap,
                 has_spoiler=True,
                 parse_mode=enums.ParseMode.HTML,
@@ -456,8 +447,7 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         else:
             await cq.message.reply_text(al_cap, parse_mode=enums.ParseMode.HTML)
 
-        # Step 2 — thumbnail + Powered By + Main Post button
-        ps = post_sessions[uid]
+        # Step 2 — Thumbnail + Powered By + Main Post button
         await cq.message.reply_photo(
             photo=io.BytesIO(ps["thumb"]),
             caption=_powered_caption(ps),
@@ -466,43 +456,48 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         )
         return
 
-    # Redraw preview
+    # ── Redraw preview ─────────────────────────────────────────────────────────
     if redraw:
         thumb = await _render(s)
         if not thumb:
-            await cq.message.edit_caption("❌ ɪᴍᴀɢᴇ ꜰᴀɪʟᴇᴅ. ᴛʀʏ ɴᴇxᴛ ▶️")
+            await cq.message.edit_caption(
+                "❌ ɪᴍᴀɢᴇ ꜰᴀɪʟᴇᴅ. ᴛʀʏ ɴᴇxᴛ ▶️",
+                parse_mode=enums.ParseMode.HTML,
+            )
             return
+
+        # FIX: parse_mode goes INSIDE InputMediaPhoto, NOT as kwarg to edit_media
         await cq.message.edit_media(
             InputMediaPhoto(
                 media=io.BytesIO(thumb),
                 caption=(
-                    f"🎨 <b>{s['title']}</b> — S{s['season']:02d} | "
+                    f"🎨 <b>{s['title']}</b> — S{s['season']:02d}\n"
                     f"<i>{', '.join(s['genres'][:3])}</i>\n\n"
                     "⬆️⬇️⬅️➡️ ᴘᴀɴ  •  ➕➖ ᴢᴏᴏᴍ  •  ◀️▶️ ꜱᴡᴀᴘ ɪᴍᴀɢᴇ"
                 ),
+                parse_mode=enums.ParseMode.HTML,
             ),
             reply_markup=_preview_kb(uid),
-            parse_mode=enums.ParseMode.HTML,
         )
 
 
-# ── Link collection ───────────────────────────────────────────────────────────
+# ── Link collection ────────────────────────────────────────────────────────────
 @Client.on_message(filters.private & filters.regex(r"https?://\S+"))
 async def link_handler(client: Client, message: Message):
     uid = message.from_user.id
-    # Ignore commands and users not awaiting a link
+    # Ignore if not waiting for a link, or message is a command
     if message.text and message.text.startswith("/"):
         return
     if uid not in pending_link or uid not in post_sessions:
         return
 
-    link = message.text.strip().split()[0]  # first URL only
+    link = message.text.strip().split()[0]
     ps   = post_sessions.pop(uid)
     pending_link.discard(uid)
 
     await message.reply_photo(
         photo=io.BytesIO(ps["thumb"]),
-        caption=_final_caption(ps),
+        caption=_final_caption(ps, link),
         reply_markup=_final_kb(link),
         parse_mode=enums.ParseMode.HTML,
     )
