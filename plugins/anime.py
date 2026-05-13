@@ -2,11 +2,12 @@
 /anime <name> [S01]
 
 Flow:
-  1. Preview thumbnail  →  pan/zoom/image-swap controls
-  2. ✅ Done  →  spoiler 4K BG + AniList expandable info
-             →  thumbnail + "Powered By" message + [📢 Main Post] button
-  3. [📢 Main Post]  →  ask for Watch & Download link
-  4. User sends link  →  final post thumbnail with URL button
+  1. Preview thumbnail  → pan/zoom/image-swap controls
+  2. ✅ Done  → spoiler 4K BG + AniList expandable info
+             → thumbnail + Powered By + [📢 Main Post] [🎬 Anime GFX] [🖼 Cover]
+  3. [📢 Main Post]  → ask for Watch & Download link → final post
+  4. [🎬 Anime GFX]  → send thumbnail to all GFX channels (turns green, one-time)
+  5. [🖼 Cover]       → send thumbnail to Cover channels, reply with /cmd Title
 """
 import io
 import logging
@@ -37,12 +38,27 @@ FANART_BASE = "https://webservice.fanart.tv/v3"
 CHANNEL     = "CrunchyRollChannel"
 
 # ── State ─────────────────────────────────────────────────────────────────────
-sessions:      dict[int, dict] = {}
-post_sessions: dict[int, dict] = {}
+sessions:      dict[int, dict] = {}   # uid → preview session
+post_sessions: dict[int, dict] = {}   # uid → post data after Done
 pending_link:  set[int]        = set()
 
 STEP_PX    = 60
 STEP_SCALE = 0.15
+
+GFX_CAPTION = (
+    "<b>Thumbnail designed by @Anime_Gfx</b>\n"
+    "⚠️ Take permission before using my content on any platform.\n"
+    "Unauthorized use is strictly prohibited!\n\n"
+    "© @Anime_Gfx – All Rights Reserved."
+)
+
+
+# ── Short title helper ────────────────────────────────────────────────────────
+def _short_title(title: str) -> str:
+    """Return roughly the first half of the title (word-boundary)."""
+    words = title.split()
+    half  = max(1, len(words) // 2)
+    return " ".join(words[:half])
 
 
 # ── Caption builders ──────────────────────────────────────────────────────────
@@ -115,9 +131,9 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
     pct = int(s["scale"] * 100)
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("◀️ ᴩʀᴇᴠ",        callback_data=f"an|prev|{uid}"),
+            InlineKeyboardButton("◀️ ᴩʀᴇᴠ",         callback_data=f"an|prev|{uid}"),
             InlineKeyboardButton(f"🖼 {idx+1}/{tot}", callback_data="an|noop"),
-            InlineKeyboardButton("ɴᴇxᴛ ▶️",         callback_data=f"an|next|{uid}"),
+            InlineKeyboardButton("ɴᴇxᴛ ▶️",          callback_data=f"an|next|{uid}"),
         ],
         [
             InlineKeyboardButton("​",  callback_data="an|noop"),
@@ -138,9 +154,15 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
     ])
 
 
-def _powered_kb(uid: int) -> InlineKeyboardMarkup:
+def _post_kb(uid: int, gfx_done: bool = False, cover_done: bool = False) -> InlineKeyboardMarkup:
+    gfx_label   = "✅ ᴀɴɪᴍᴇ ɢꜰx ✓" if gfx_done   else "🎬 ᴀɴɪᴍᴇ ɢꜰx"
+    cover_label = "✅ ᴄᴏᴠᴇʀ ✓"       if cover_done else "🖼 ᴄᴏᴠᴇʀ"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢  ᴍᴀɪɴ ᴘᴏꜱᴛ", callback_data=f"an|mainpost|{uid}")],
+        [InlineKeyboardButton("📢 ᴍᴀɪɴ ᴘᴏꜱᴛ", callback_data=f"an|mainpost|{uid}")],
+        [
+            InlineKeyboardButton(gfx_label,   callback_data=f"an|gfx|{uid}"),
+            InlineKeyboardButton(cover_label, callback_data=f"an|cover|{uid}"),
+        ],
     ])
 
 
@@ -204,8 +226,8 @@ async def _fetch_data(name: str, season: int) -> dict:
         else:
             episodes, season = 1, 1
 
-        img_data = await _tmdb(sess, f"/{media}/{tmdb_id}/images")
-        posters  = [
+        img_data  = await _tmdb(sess, f"/{media}/{tmdb_id}/images")
+        posters   = [
             f"{TMDB_POST}{p['file_path']}"
             for p in sorted(img_data.get("posters", []),
                             key=lambda x: x.get("vote_average", 0), reverse=True)[:8]
@@ -280,10 +302,12 @@ async def anime_cmd(client: Client, message: Message):
     raw = " ".join(message.command[1:]).strip()
     if not raw:
         await message.reply_text(
-            "⚠️ <b>ᴜꜱᴀɢᴇ:</b>\n"
+            "⚠️ <b>Usage:</b>\n"
             "<code>/anime &lt;name&gt;</code>\n"
-            "<code>/anime &lt;name&gt; S02</code> — ꜱᴘᴇᴄɪꜰʏ ꜱᴇᴀꜱᴏɴ\n\n"
-            "<b>ᴇxᴀᴍᴘʟᴇ:</b> <code>/anime Shield Hero S02</code>",
+            "<code>/anime &lt;name&gt; S02</code> — specify season\n\n"
+            "<b>Examples:</b>\n"
+            "<code>/anime Fairy Tail</code>\n"
+            "<code>/anime Shield Hero S02</code>",
             parse_mode=enums.ParseMode.HTML,
         )
         return
@@ -297,14 +321,14 @@ async def anime_cmd(client: Client, message: Message):
         query = raw
 
     wait = await message.reply_text(
-        f"🔍 ꜱᴇᴀʀᴄʜɪɴɢ <b>{query}</b> — ꜱᴇᴀꜱᴏɴ {season}...",
+        f"🔍 Searching <b>{query}</b> — Season {season}...",
         parse_mode=enums.ParseMode.HTML,
     )
 
     data = await _fetch_data(query, season)
     if not data or not data.get("images"):
         await wait.edit_text(
-            f"❌ ɴᴏ ʀᴇꜱᴜʟᴛꜱ ꜰᴏʀ <b>{query}</b>.",
+            f"❌ No results for <b>{query}</b>. Check the spelling and try again.",
             parse_mode=enums.ParseMode.HTML,
         )
         return
@@ -324,7 +348,7 @@ async def anime_cmd(client: Client, message: Message):
     thumb = await _render(sessions[uid])
     await wait.delete()
     if not thumb:
-        await message.reply_text("❌ ɪᴍᴀɢᴇ ʟᴏᴀᴅ ꜰᴀɪʟᴇᴅ. ᴛʀʏ ᴀɢᴀɪɴ.")
+        await message.reply_text("❌ Image load failed. Try again.")
         sessions.pop(uid, None)
         return
 
@@ -333,7 +357,7 @@ async def anime_cmd(client: Client, message: Message):
         caption=(
             f"🎨 <b>{data['title']}</b> — S{data['season']:02d}\n"
             f"<i>{', '.join(data['genres'][:3])}</i>\n\n"
-            "⬆️⬇️⬅️➡️ ᴘᴀɴ  •  ➕➖ ᴢᴏᴏᴍ  •  ◀️▶️ ꜱᴡᴀᴘ ɪᴍᴀɢᴇ"
+            "⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
         ),
         reply_markup=_preview_kb(uid),
         parse_mode=enums.ParseMode.HTML,
@@ -355,22 +379,102 @@ async def anime_cb(client: Client, cq: CallbackQuery):
     # ── Main Post ──────────────────────────────────────────────────────────────
     if action == "mainpost":
         if uid not in post_sessions:
-            await cq.answer("ꜱᴇꜱꜱɪᴏɴ ᴇxᴘɪʀᴇᴅ.", show_alert=True)
+            await cq.answer("Session expired.", show_alert=True)
             return
         pending_link.add(uid)
         await cq.message.reply_text(
-            "🔗 <b>ꜱᴇɴᴅ ᴛʜᴇ ᴡᴀᴛᴄʜ &amp; ᴅᴏᴡɴʟᴏᴀᴅ ʟɪɴᴋ ɴᴏᴡ:</b>",
+            "🔗 <b>Send the Watch &amp; Download link now:</b>",
             parse_mode=enums.ParseMode.HTML,
         )
-        await cq.answer("📨 ꜱᴇɴᴅ ᴛʜᴇ ʟɪɴᴋ ʙᴇʟᴏᴡ ↓")
+        await cq.answer("📨 Send the link below ↓")
+        return
+
+    # ── Anime GFX send ─────────────────────────────────────────────────────────
+    if action == "gfx":
+        if uid not in post_sessions:
+            await cq.answer("Session expired.", show_alert=True)
+            return
+        ps = post_sessions[uid]
+        if ps.get("gfx_done"):
+            await cq.answer("✅ Already sent to GFX channels!", show_alert=True)
+            return
+
+        gfx_channels = await client.db.get_gfx_channels(uid)
+        if not gfx_channels:
+            await cq.answer(
+                "⚠️ No GFX channels added!\nGo to /settings to add channels.",
+                show_alert=True,
+            )
+            return
+
+        sent_count = 0
+        for ch in gfx_channels:
+            try:
+                await client.send_photo(
+                    chat_id=ch["id"],
+                    photo=io.BytesIO(ps["thumb"]),
+                    caption=GFX_CAPTION,
+                    parse_mode=enums.ParseMode.HTML,
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.warning("GFX send to %s failed: %s", ch["id"], e)
+
+        ps["gfx_done"] = True
+
+        # Update keyboard — turn GFX button green
+        await cq.message.edit_reply_markup(
+            reply_markup=_post_kb(uid, gfx_done=True, cover_done=ps.get("cover_done", False))
+        )
+        await cq.answer(f"✅ Sent to {sent_count} GFX channel(s)!", show_alert=True)
+        return
+
+    # ── Cover send ─────────────────────────────────────────────────────────────
+    if action == "cover":
+        if uid not in post_sessions:
+            await cq.answer("Session expired.", show_alert=True)
+            return
+        ps = post_sessions[uid]
+        if ps.get("cover_done"):
+            await cq.answer("✅ Already sent to Cover channels!", show_alert=True)
+            return
+
+        cover_channels = await client.db.get_cover_channels(uid)
+        if not cover_channels:
+            await cq.answer(
+                "⚠️ No Cover channels added!\nGo to /settings to add channels.",
+                show_alert=True,
+            )
+            return
+
+        short = _short_title(ps["title"])
+        sent_count = 0
+        for ch in cover_channels:
+            try:
+                sent_msg = await client.send_photo(
+                    chat_id=ch["id"],
+                    photo=io.BytesIO(ps["thumb"]),
+                )
+                cmd = ch.get("command", "/cover")
+                await sent_msg.reply_text(f"{cmd} {short}")
+                sent_count += 1
+            except Exception as e:
+                logger.warning("Cover send to %s failed: %s", ch["id"], e)
+
+        ps["cover_done"] = True
+
+        await cq.message.edit_reply_markup(
+            reply_markup=_post_kb(uid, gfx_done=ps.get("gfx_done", False), cover_done=True)
+        )
+        await cq.answer(f"✅ Sent to {sent_count} Cover channel(s)!", show_alert=True)
         return
 
     # ── Preview controls ───────────────────────────────────────────────────────
     if uid not in sessions:
-        await cq.answer("ꜱᴇꜱꜱɪᴏɴ ᴇxᴘɪʀᴇᴅ. ᴜꜱᴇ /anime ᴀɢᴀɪɴ.", show_alert=True)
+        await cq.answer("Session expired. Use /anime again.", show_alert=True)
         return
     if cq.from_user.id != uid:
-        await cq.answer("ᴛʜɪꜱ ɪꜱ ɴᴏᴛ ʏᴏᴜʀ ꜱᴇꜱꜱɪᴏɴ!", show_alert=True)
+        await cq.answer("This is not your session!", show_alert=True)
         return
 
     s      = sessions[uid]
@@ -378,18 +482,24 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     if action == "prev":
         s["img_idx"] = (s["img_idx"] - 1) % len(s["images"])
-        s["offset_x"] = s["offset_y"] = 0;  await cq.answer("◀️")
+        s["offset_x"] = s["offset_y"] = 0
+        await cq.answer("◀️")
     elif action == "next":
         s["img_idx"] = (s["img_idx"] + 1) % len(s["images"])
-        s["offset_x"] = s["offset_y"] = 0;  await cq.answer("▶️")
+        s["offset_x"] = s["offset_y"] = 0
+        await cq.answer("▶️")
     elif action == "up":
-        s["offset_y"] = max(0, s["offset_y"] - STEP_PX);  await cq.answer("⬆️")
+        s["offset_y"] = max(0, s["offset_y"] - STEP_PX)
+        await cq.answer("⬆️")
     elif action == "down":
-        s["offset_y"] += STEP_PX;  await cq.answer("⬇️")
+        s["offset_y"] += STEP_PX
+        await cq.answer("⬇️")
     elif action == "left":
-        s["offset_x"] = max(0, s["offset_x"] - STEP_PX);  await cq.answer("⬅️")
+        s["offset_x"] = max(0, s["offset_x"] - STEP_PX)
+        await cq.answer("⬅️")
     elif action == "right":
-        s["offset_x"] += STEP_PX;  await cq.answer("➡️")
+        s["offset_x"] += STEP_PX
+        await cq.answer("➡️")
     elif action == "zin":
         s["scale"] = min(3.0, round(s["scale"] + STEP_SCALE, 2))
         await cq.answer(f"🔍 {int(s['scale']*100)}%")
@@ -399,7 +509,7 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     elif action == "done":
         redraw = False
-        await cq.answer("⏳ ɢᴇɴᴇʀᴀᴛɪɴɢ...", show_alert=False)
+        await cq.answer("⏳ Generating...", show_alert=False)
 
         thumb = await _render(s)
         if not thumb:
@@ -409,25 +519,24 @@ async def anime_cb(client: Client, cq: CallbackQuery):
             )
             return
 
-        # Save thumbnail URL to DB
         await client.db.set_thumbnail(uid, s["images"][s["img_idx"]])
 
-        # Build post session
         post_sessions[uid] = {
             k: s[k] for k in
             ("title","year","rating","episodes","genres",
              "season","audio","quality","fanart_bgs")
         }
-        post_sessions[uid]["thumb"] = thumb
+        post_sessions[uid]["thumb"]      = thumb
+        post_sessions[uid]["gfx_done"]   = False
+        post_sessions[uid]["cover_done"] = False
         sessions.pop(uid, None)
 
-        # Remove inline keyboard from preview
         await cq.message.edit_reply_markup(reply_markup=None)
 
-        # Step 1 — Spoiler image + AniList info
-        ps      = post_sessions[uid]
-        al      = await fetch_anilist(ps["title"])
-        bg_urls = ps["fanart_bgs"]
+        # Step 1 — Spoiler image + AniList
+        ps       = post_sessions[uid]
+        al       = await fetch_anilist(ps["title"])
+        bg_urls  = ps["fanart_bgs"]
         bg_bytes = await _download(random.choice(bg_urls)) if bg_urls else None
         spoiler  = make_spoiler_bg(bg_bytes, CHANNEL) if bg_bytes else None
 
@@ -447,11 +556,11 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         else:
             await cq.message.reply_text(al_cap, parse_mode=enums.ParseMode.HTML)
 
-        # Step 2 — Thumbnail + Powered By + Main Post button
+        # Step 2 — Thumbnail + Powered By + action buttons
         await cq.message.reply_photo(
             photo=io.BytesIO(ps["thumb"]),
             caption=_powered_caption(ps),
-            reply_markup=_powered_kb(uid),
+            reply_markup=_post_kb(uid),
             parse_mode=enums.ParseMode.HTML,
         )
         return
@@ -461,19 +570,17 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         thumb = await _render(s)
         if not thumb:
             await cq.message.edit_caption(
-                "❌ ɪᴍᴀɢᴇ ꜰᴀɪʟᴇᴅ. ᴛʀʏ ɴᴇxᴛ ▶️",
+                "❌ Image failed. Try next ▶️",
                 parse_mode=enums.ParseMode.HTML,
             )
             return
-
-        # FIX: parse_mode goes INSIDE InputMediaPhoto, NOT as kwarg to edit_media
         await cq.message.edit_media(
             InputMediaPhoto(
                 media=io.BytesIO(thumb),
                 caption=(
                     f"🎨 <b>{s['title']}</b> — S{s['season']:02d}\n"
                     f"<i>{', '.join(s['genres'][:3])}</i>\n\n"
-                    "⬆️⬇️⬅️➡️ ᴘᴀɴ  •  ➕➖ ᴢᴏᴏᴍ  •  ◀️▶️ ꜱᴡᴀᴘ ɪᴍᴀɢᴇ"
+                    "⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
                 ),
                 parse_mode=enums.ParseMode.HTML,
             ),
@@ -485,7 +592,6 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 @Client.on_message(filters.private & filters.regex(r"https?://\S+"))
 async def link_handler(client: Client, message: Message):
     uid = message.from_user.id
-    # Ignore if not waiting for a link, or message is a command
     if message.text and message.text.startswith("/"):
         return
     if uid not in pending_link or uid not in post_sessions:
