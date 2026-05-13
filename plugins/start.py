@@ -72,12 +72,20 @@ HELP_KB = InlineKeyboardMarkup([
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
     await client.db.add_user(message.from_user.id)
-    await message.reply_photo(
-        photo=START_PIC,
-        caption=START_TEXT,
-        reply_markup=START_KB,
-        parse_mode=enums.ParseMode.HTML,
-    )
+    try:
+        await message.reply_photo(
+            photo=START_PIC,
+            caption=START_TEXT,
+            reply_markup=START_KB,
+            parse_mode=enums.ParseMode.HTML,
+        )
+    except Exception:
+        # Fallback to text if photo fails to load
+        await message.reply_text(
+            START_TEXT,
+            reply_markup=START_KB,
+            parse_mode=enums.ParseMode.HTML,
+        )
 
 
 @Client.on_message(filters.command("help") & filters.private)
@@ -92,12 +100,22 @@ async def help_cmd(client: Client, message: Message):
 @Client.on_callback_query(filters.regex(r"^start\|"))
 async def start_cb(client: Client, cq):
     action = cq.data.split("|")[1]
+
     if action == "help":
-        await cq.message.edit_caption(
-            caption=HELP_TEXT,
-            reply_markup=HELP_KB,
-            parse_mode=enums.ParseMode.HTML,
-        )
+        try:
+            await cq.message.edit_caption(
+                caption=HELP_TEXT,
+                reply_markup=HELP_KB,
+                parse_mode=enums.ParseMode.HTML,
+            )
+        except Exception:
+            await cq.message.reply_text(
+                HELP_TEXT,
+                reply_markup=HELP_KB,
+                parse_mode=enums.ParseMode.HTML,
+            )
+        await cq.answer()
+
     elif action == "settings":
         from plugins.settings import SETTINGS_TEXT, _main_kb
         await cq.message.reply_text(
@@ -106,10 +124,21 @@ async def start_cb(client: Client, cq):
             parse_mode=enums.ParseMode.HTML,
         )
         await cq.answer()
+
     elif action == "back":
-        await cq.message.edit_caption(
-            caption=START_TEXT,
-            reply_markup=START_KB,
-            parse_mode=enums.ParseMode.HTML,
-        )
-    await cq.answer()
+        try:
+            await cq.message.edit_caption(
+                caption=START_TEXT,
+                reply_markup=START_KB,
+                parse_mode=enums.ParseMode.HTML,
+            )
+        except Exception:
+            await cq.message.reply_text(
+                START_TEXT,
+                reply_markup=START_KB,
+                parse_mode=enums.ParseMode.HTML,
+            )
+        await cq.answer()
+
+    else:
+        await cq.answer()
