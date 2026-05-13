@@ -2,8 +2,7 @@ from pyrogram import Client, enums, filters
 from pyrogram.types import (
     InlineKeyboardButton, InlineKeyboardMarkup, Message,
 )
-from config import START_PIC
-
+from config import START_PIC, OWNER_ID
 
 START_TEXT = """
 <b>🎌 Welcome to Anime Thumbnail Bot!</b>
@@ -71,7 +70,11 @@ HELP_KB = InlineKeyboardMarkup([
 
 @Client.on_message(filters.command("start") & filters.private)
 async def start_cmd(client: Client, message: Message):
-    await client.db.add_user(message.from_user.id)
+    try:
+        await client.db.add_user(message.from_user.id)
+    except Exception:
+        pass  # Don't let DB failures block the start message
+
     try:
         await message.reply_photo(
             photo=START_PIC,
@@ -80,7 +83,7 @@ async def start_cmd(client: Client, message: Message):
             parse_mode=enums.ParseMode.HTML,
         )
     except Exception:
-        # Fallback to text if photo fails to load
+        # Fallback to plain text if photo fails
         await message.reply_text(
             START_TEXT,
             reply_markup=START_KB,
