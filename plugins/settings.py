@@ -203,9 +203,12 @@ async def settings_cb(client: Client, cq: CallbackQuery):
 
 
 # ── Text input handler for settings flow ──────────────────────────────────────
-@Client.on_message(filters.private & ~filters.command)
+@Client.on_message(filters.private)
 async def settings_input(client: Client, message: Message):
     uid  = message.from_user.id
+    # Ignore commands and users not in settings flow
+    if message.text and message.text.startswith("/"):
+        return
     if uid not in settings_state:
         return
 
