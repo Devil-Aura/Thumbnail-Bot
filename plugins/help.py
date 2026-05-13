@@ -1,23 +1,48 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client, enums, filters
+from pyrogram.types import (
+    InlineKeyboardButton, InlineKeyboardMarkup, Message,
+)
+
+HELP_TEXT = """
+<b>📖 Help — Anime Thumbnail Bot</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Commands:</b>
+├ /anime &lt;name&gt; — Generate thumbnail (Season 1)
+├ /anime &lt;name&gt; S02 — Specify season
+├ /settings — Manage GFX &amp; Cover channels
+└ /help — Show this message
+
+<b>🎨 Thumbnail Controls:</b>
+├ ◀️ ▶️ — Cycle through artwork images
+├ ⬆️⬇️⬅️➡️ — Pan the image position
+├ ➕ ➖ — Zoom in / out
+└ ✅ Done — Finalize thumbnail
+
+<b>📤 After Done:</b>
+├ 🔒 Spoiler image with AniList info sent
+├ 🖼 Thumbnail with "Powered By" caption
+├ 📢 Main Post — add Watch &amp; Download link
+├ 🎬 Anime GFX — send to your GFX channels
+└ 🖼 Cover — send to your Cover channels
+
+<b>⚙️ /settings:</b>
+├ Add/remove Anime GFX channels
+└ Add/remove Cover channels with commands
+
+<b>Examples:</b>
+<code>/anime Fairy Tail</code>
+<code>/anime One Piece S02</code>
+<code>/anime Shield Hero S01</code>
+"""
 
 
 @Client.on_message(filters.command("help") & filters.private)
 async def help_cmd(client: Client, message: Message):
-    text = """📋 **ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅꜱ**
-
-/start — ꜱᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ
-/set — ꜱᴇᴛ ᴄᴜꜱᴛᴏᴍ ᴛʜᴜᴍʙɴᴀɪʟ (ʀᴇᴩʟʏ ᴛᴏ ᴀɴ ɪᴍᴀɢᴇ)
-/del — ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ꜱᴀᴠᴇᴅ ᴛʜᴜᴍʙɴᴀɪʟ
-/show — ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ ᴛʜᴜᴍʙɴᴀɪʟ
-/help — ꜱʜᴏᴡ ᴛʜɪꜱ ᴍᴇꜱꜱᴀɢᴇ
-
-💡 **ʜᴏᴡ ᴛᴏ ᴜꜱᴇ:**
-1️⃣ ꜱᴇɴᴅ /set ᴀɴᴅ ʀᴇᴩʟʏ ᴡɪᴛʜ ᴀɴ ɪᴍᴀɢᴇ
-2️⃣ ꜱᴇɴᴅ ᴀɴʏ ꜰɪʟᴇ ᴛᴏ ᴛʜᴇ ʙᴏᴛ
-3️⃣ ᴛʜᴇ ʙᴏᴛ ᴡɪʟʟ ᴀᴩᴩʟʏ ᴛʜᴇ ᴛʜᴜᴍʙɴᴀɪʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ!"""
-
-    buttons = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ꜱᴛᴀʀᴛ", callback_data="start")]]
+    await message.reply_text(
+        HELP_TEXT,
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🏠 Home", callback_data="start|back"),
+        ]]),
+        parse_mode=enums.ParseMode.HTML,
     )
-    await message.reply_text(text, reply_markup=buttons)
