@@ -1,78 +1,115 @@
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client, enums, filters
+from pyrogram.types import (
+    InlineKeyboardButton, InlineKeyboardMarkup, Message,
+)
 from config import START_PIC
 
 
-START_TEXT = """ʜᴇʏ {mention}! 👋
+START_TEXT = """
+<b>🎌 Welcome to Anime Thumbnail Bot!</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ **ᴛʜᴜᴍʙɴᴀɪʟ ʙᴏᴛ** 🎨
+I create professional <b>CrunchyRoll-style 1280×720</b> anime thumbnails automatically using TMDB & FANART.TV artwork — and generate ready-to-post channel captions.
 
-ɪ ᴄᴀɴ ʜᴇʟᴘ ʏᴏᴜ ꜱᴇᴛ ᴄᴜꜱᴛᴏᴍ ᴛʜᴜᴍʙɴᴀɪʟꜱ ꜰᴏʀ ʏᴏᴜʀ \
-ᴛᴇʟᴇɢʀᴀᴍ ꜰɪʟᴇꜱ ᴀɴᴅ ᴍᴇᴅɪᴀ!
+<b>✨ What I can do:</b>
+├ 🖼 Generate stunning anime thumbnails
+├ 🎨 Pan, zoom & swap artwork interactively
+├ 📢 Post to your GFX & Cover channels
+├ 📋 Build formatted channel posts with links
+└ ⚙️ Full per-user channel settings
 
-📌 **ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅꜱ:**
-• /set — ꜱᴇᴛ ʏᴏᴜʀ ᴄᴜꜱᴛᴏᴍ ᴛʜᴜᴍʙɴᴀɪʟ
-• /del — ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴛʜᴜᴍʙɴᴀɪʟ
-• /show — ꜱʜᴏᴡ ᴄᴜʀʀᴇɴᴛ ᴛʜᴜᴍʙɴᴀɪʟ
-• /help — ɢᴇᴛ ʜᴇʟᴘ
+<b>🚀 Get started with /anime</b>
+"""
 
-**ꜱᴛᴀᴛᴜꜱ:** ᴏɴʟɪɴᴇ ✅"""
+START_KB = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("📖 Help",      callback_data="start|help"),
+        InlineKeyboardButton("⚙️ Settings",  callback_data="start|settings"),
+    ],
+    [
+        InlineKeyboardButton("📢 Channel",   url="https://t.me/CrunchyRollChannel"),
+        InlineKeyboardButton("👨‍💻 Support",  url="https://t.me/CrunchyRollChannel"),
+    ],
+])
 
-HELP_TEXT = """📋 **ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅꜱ**
+HELP_TEXT = """
+<b>📖 Help — Anime Thumbnail Bot</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/start — ꜱᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ
-/set — ꜱᴇᴛ ᴄᴜꜱᴛᴏᴍ ᴛʜᴜᴍʙɴᴀɪʟ ᴠɪᴀ ʀᴇᴩʟʏ ᴛᴏ ᴀɴ ɪᴍᴀɢᴇ
-/del — ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ꜱᴀᴠᴇᴅ ᴛʜᴜᴍʙɴᴀɪʟ
-/show — ᴠɪᴇᴡ ʏᴏᴜʀ ᴄᴜʀʀᴇɴᴛ ᴛʜᴜᴍʙɴᴀɪʟ
-/help — ꜱʜᴏᴡ ᴛʜɪꜱ ᴍᴇꜱꜱᴀɢᴇ
+<b>Commands:</b>
+├ /anime &lt;name&gt; — Generate thumbnail (Season 1)
+├ /anime &lt;name&gt; S02 — Specify season
+├ /settings — Manage your GFX & Cover channels
+└ /help — Show this message
 
-💡 **ʜᴏᴡ ᴛᴏ ᴜꜱᴇ:**
-1️⃣ ꜱᴇɴᴅ /set ᴀɴᴅ ʀᴇᴩʟʏ ᴡɪᴛʜ ᴀɴ ɪᴍᴀɢᴇ
-2️⃣ ꜱᴇɴᴅ ᴀɴʏ ꜰɪʟᴇ ᴛᴏ ᴛʜᴇ ʙᴏᴛ
-3️⃣ ᴛʜᴇ ʙᴏᴛ ᴡɪʟʟ ᴀᴩᴩʟʏ ᴛʜᴇ ᴛʜᴜᴍʙɴᴀɪʟ ᴀᴜᴛᴏᴍᴀᴛɪᴄᴀʟʟʏ!"""
+<b>🎨 Thumbnail Controls:</b>
+├ ◀️ ▶️ — Cycle through artwork images
+├ ⬆️⬇️⬅️➡️ — Pan the image
+├ ➕ ➖ — Zoom in / out
+└ ✅ Done — Finalize & send
 
+<b>📤 After Done:</b>
+├ Spoiler image with AniList info is sent
+├ Thumbnail is sent with "Powered By" caption
+├ 📢 Main Post — send watch/download link
+├ 🎬 Anime GFX — send to your GFX channels
+└ 🖼 Cover — send to your Cover channels
 
-def start_buttons():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("ꜱᴜᴩᴩᴏʀᴛ 💬", url="https://t.me/"),
-                InlineKeyboardButton("ᴜᴩᴅᴀᴛᴇꜱ 📢", url="https://t.me/"),
-            ],
-            [InlineKeyboardButton("ʜᴇʟᴩ & ᴄᴏᴍᴍᴀɴᴅꜱ 📋", callback_data="help")],
-        ]
-    )
+<b>⚙️ Settings:</b>
+├ Add/remove Anime GFX channels
+└ Add/remove Cover channels (with command)
 
+<b>Example:</b>
+<code>/anime Fairy Tail S02</code>
+<code>/anime One Piece</code>
+"""
 
-def back_button():
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data="start")]]
-    )
+HELP_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("⬅️ Back", callback_data="start|back")],
+])
 
 
 @Client.on_message(filters.command("start") & filters.private)
-async def start(client: Client, message: Message):
+async def start_cmd(client: Client, message: Message):
     await client.db.add_user(message.from_user.id)
-    mention = message.from_user.mention
     await message.reply_photo(
         photo=START_PIC,
-        caption=START_TEXT.format(mention=mention),
-        reply_markup=start_buttons(),
+        caption=START_TEXT,
+        reply_markup=START_KB,
+        parse_mode=enums.ParseMode.HTML,
     )
 
 
-@Client.on_callback_query(filters.regex("^help$"))
-async def help_callback(client, cq):
-    await cq.message.edit_caption(
-        caption=HELP_TEXT,
-        reply_markup=back_button(),
+@Client.on_message(filters.command("help") & filters.private)
+async def help_cmd(client: Client, message: Message):
+    await message.reply_text(
+        HELP_TEXT,
+        reply_markup=HELP_KB,
+        parse_mode=enums.ParseMode.HTML,
     )
 
 
-@Client.on_callback_query(filters.regex("^start$"))
-async def start_callback(client, cq):
-    mention = cq.from_user.mention
-    await cq.message.edit_caption(
-        caption=START_TEXT.format(mention=mention),
-        reply_markup=start_buttons(),
-    )
+@Client.on_callback_query(filters.regex(r"^start\|"))
+async def start_cb(client: Client, cq):
+    action = cq.data.split("|")[1]
+    if action == "help":
+        await cq.message.edit_caption(
+            caption=HELP_TEXT,
+            reply_markup=HELP_KB,
+            parse_mode=enums.ParseMode.HTML,
+        )
+    elif action == "settings":
+        from plugins.settings import SETTINGS_TEXT, _main_kb
+        await cq.message.reply_text(
+            SETTINGS_TEXT,
+            reply_markup=_main_kb(),
+            parse_mode=enums.ParseMode.HTML,
+        )
+        await cq.answer()
+    elif action == "back":
+        await cq.message.edit_caption(
+            caption=START_TEXT,
+            reply_markup=START_KB,
+            parse_mode=enums.ParseMode.HTML,
+        )
+    await cq.answer()
