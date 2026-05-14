@@ -33,7 +33,8 @@ HELP_KB = InlineKeyboardMarkup([
 ])
 
 
-@Client.on_message(filters.command("start") & filters.private)
+# group=-2 → runs BEFORE pvt_gate (group=-1) so /start ALWAYS responds
+@Client.on_message(filters.command("start") & filters.private, group=-2)
 async def start_cmd(client: Client, message: Message):
     try:
         await client.db.add_user(message.from_user.id)
@@ -75,12 +76,18 @@ async def start_cb(client: Client, cq: CallbackQuery):
         await cq.answer()
 
     elif action == "settings":
-        from plugins.settings import SETTINGS_TEXT, _main_kb
-        await cq.message.reply_text(
-            SETTINGS_TEXT,
-            reply_markup=_main_kb(),
-            parse_mode=enums.ParseMode.HTML,
-        )
+        try:
+            from plugins.settings import SETTINGS_TEXT, _main_kb
+            await cq.message.reply_text(
+                SETTINGS_TEXT,
+                reply_markup=_main_kb(),
+                parse_mode=enums.ParseMode.HTML,
+            )
+        except Exception:
+            await cq.message.reply_text(
+                "⚙️ <b>Settings not available yet.</b>",
+                parse_mode=enums.ParseMode.HTML,
+            )
         await cq.answer()
 
     elif action == "back":
