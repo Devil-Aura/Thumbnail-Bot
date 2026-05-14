@@ -37,6 +37,43 @@ TMDB_BACK   = "https://image.tmdb.org/t/p/w1280"
 FANART_BASE = "https://webservice.fanart.tv/v3"
 CHANNEL     = "CrunchyRollChannel"
 
+# ── Safe caption sender — falls back if blockquote not supported ─────────────
+def _strip_bq(text: str) -> str:
+    """Strip blockquote tags for Pyrogram versions that don't support them."""
+    return (text
+        .replace("<blockquote expandable>", "")
+        .replace("<blockquote>", "")
+        .replace("</blockquote>", ""))
+
+
+async def _send_photo_caption(target, photo, caption, *, reply_markup=None,
+                               has_spoiler=False, **kw):
+    """Send photo with HTML caption; retry without blockquote on parse error."""
+    from pyrogram import enums
+    kwargs = dict(parse_mode=enums.ParseMode.HTML)
+    if reply_markup:
+        kwargs["reply_markup"] = reply_markup
+    if has_spoiler:
+        kwargs["has_spoiler"] = True
+    try:
+        return await target.reply_photo(photo=photo, caption=caption, **kwargs)
+    except Exception:
+        return await target.reply_photo(photo=photo,
+                                        caption=_strip_bq(caption), **kwargs)
+
+
+async def _reply_caption(target, caption, *, reply_markup=None, **kw):
+    """Send text caption; retry without blockquote on parse error."""
+    from pyrogram import enums
+    kwargs = dict(parse_mode=enums.ParseMode.HTML)
+    if reply_markup:
+        kwargs["reply_markup"] = reply_markup
+    try:
+        return await target.reply_text(caption, **kwargs)
+    except Exception:
+        return await target.reply_text(_strip_bq(caption), **kwargs)
+
+
 # ── State ─────────────────────────────────────────────────────────────────────
 sessions:      dict[int, dict] = {}   # uid → preview session
 post_sessions: dict[int, dict] = {}   # uid → post data after Done
@@ -548,22 +585,15 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         )
 
         if spoiler:
-            await cq.message.reply_photo(
-                photo=io.BytesIO(spoiler),
-                caption=al_cap,
-                has_spoiler=True,
-                parse_mode=enums.ParseMode.HTML,
-            )
+            await _send_photo_caption(
+                cq.message, io.BytesIO(spoiler), al_cap, has_spoiler=True)
         else:
-            await cq.message.reply_text(al_cap, parse_mode=enums.ParseMode.HTML)
+            await _reply_caption(cq.message, al_cap)
 
         # Step 2 — Thumbnail + Powered By + action buttons
-        await cq.message.reply_photo(
-            photo=io.BytesIO(ps["thumb"]),
-            caption=_powered_caption(ps),
-            reply_markup=_post_kb(uid),
-            parse_mode=enums.ParseMode.HTML,
-        )
+        await _send_photo_caption(
+            cq.message, io.BytesIO(ps["thumb"]),
+            _powered_caption(ps), reply_markup=_post_kb(uid))
         return
 
     # ── Redraw preview ─────────────────────────────────────────────────────────
@@ -602,9 +632,6 @@ async def link_handler(client: Client, message: Message):
     ps   = post_sessions.pop(uid)
     pending_link.discard(uid)
 
-    await message.reply_photo(
-        photo=io.BytesIO(ps["thumb"]),
-        caption=_final_caption(ps, link),
-        reply_markup=_final_kb(link),
-        parse_mode=enums.ParseMode.HTML,
-    )
+    await _send_photo_caption(
+        message, io.BytesIO(ps["thumb"]),
+        _final_caption(ps, link), reply_markup=_final_kb(link))
