@@ -275,7 +275,7 @@ def make_spoiler_bg(bg_bytes: bytes, channel: str) -> bytes:
     img = Image.alpha_composite(img, ov)
 
     draw = ImageDraw.Draw(img)
-    f    = _f(_BOLD, 30)
+    f    = _f(_BOLD, 20)
     text = f"@{channel}"
     tbb  = draw.textbbox((0, 0), text, font=f)
     tw, th = tbb[2] - tbb[0], tbb[3] - tbb[1]
