@@ -6,10 +6,14 @@
 
 When bot is private, all commands from non-owner / non-admin users are
 blocked silently (no response). The owner is always allowed.
+/start and /help always pass through so new users can see the bot.
 """
 from pyrogram import Client, enums, filters
 from pyrogram.types import Message
 from config import OWNER_ID
+
+# Commands that always pass through pvt gate
+_OPEN_CMDS = {"start", "help"}
 
 
 def _is_owner(user_id: int) -> bool:
@@ -34,6 +38,10 @@ async def pvt_gate(client: Client, message: Message):
 
     # Owner always passes through
     if _is_owner(uid):
+        return
+
+    # /start and /help always pass through pvt gate
+    if message.command and message.command[0].lower() in _OPEN_CMDS:
         return
 
     try:
@@ -157,8 +165,9 @@ async def admins_cmd(client: Client, message: Message):
     status = "🔒 Private" if is_pvt else "🌐 Public"
 
     if admins:
-        admin_list = "\n".join(f"├ <code>{a}</code>" for a in admins[:-1])
-        admin_list += f"\n└ <code>{admins[-1]}</code>" if len(admins) > 1 else f"└ <code>{admins[0]}</code>" if admins else ""
+        lines = [f"├ <code>{a}</code>" for a in admins[:-1]]
+        lines.append(f"└ <code>{admins[-1]}</code>")
+        admin_list = "\n".join(lines)
     else:
         admin_list = "└ No admins added"
 
