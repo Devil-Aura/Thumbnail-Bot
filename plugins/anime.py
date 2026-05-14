@@ -119,7 +119,7 @@ def _anilist_caption(al: dict, anime_title: str) -> str:
     )
     return (
         f"<b>{anime_title} In Hindi Dub Available On @{CHANNEL}...!!</b>\n"
-        f"<blockquote expandable>{inner}</blockquote>"
+        f"<blockquote>{inner}</blockquote>"
     )
 
 
