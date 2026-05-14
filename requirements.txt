@@ -1,0 +1,7 @@
+pyrogram==2.0.107
+tgcrypto
+motor
+pymongo
+Pillow
+aiohttp
+requests
