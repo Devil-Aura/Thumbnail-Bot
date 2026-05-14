@@ -8,7 +8,7 @@ START_TEXT = (
     "<b>🎌 Anime Thumbnail Bot</b>\n"
     "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     "I create professional <b>CrunchyRoll-style 1280×720</b> anime thumbnails "
-    "using TMDB & FANART.TV artwork.\n\n"
+    "using TMDB &amp; FANART.TV artwork.\n\n"
     "<b>✨ Features:</b>\n"
     "├ 🖼 Generate anime thumbnails\n"
     "├ 🎨 Pan, zoom &amp; swap artwork\n"
@@ -39,8 +39,6 @@ async def start_cmd(client: Client, message: Message):
         await client.db.add_user(message.from_user.id)
     except Exception:
         pass
-
-    from plugins.help import HELP_TEXT as _HT  # reuse exact help text from help.py
     try:
         await message.reply_photo(
             photo=START_PIC,
@@ -61,16 +59,18 @@ async def start_cb(client: Client, cq: CallbackQuery):
     action = cq.data.split("|")[1]
 
     if action == "help":
-        from plugins.help import HELP_TEXT as HT
+        from plugins.help import HELP_TEXT
         try:
             await cq.message.edit_caption(
-                caption=HT,
+                caption=HELP_TEXT,
                 reply_markup=HELP_KB,
                 parse_mode=enums.ParseMode.HTML,
             )
         except Exception:
             await cq.message.reply_text(
-                HT, reply_markup=HELP_KB, parse_mode=enums.ParseMode.HTML,
+                HELP_TEXT,
+                reply_markup=HELP_KB,
+                parse_mode=enums.ParseMode.HTML,
             )
         await cq.answer()
 
