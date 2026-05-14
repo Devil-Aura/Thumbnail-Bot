@@ -33,9 +33,9 @@ HELP_KB = InlineKeyboardMarkup([
 ])
 
 
-# group=-2 → runs BEFORE pvt_gate (group=-1) so /start ALWAYS responds
 @Client.on_message(filters.command("start") & filters.private, group=-2)
 async def start_cmd(client: Client, message: Message):
+    """Runs at group=-2, BEFORE pvt_gate (group=-1). Always responds."""
     try:
         await client.db.add_user(message.from_user.id)
     except Exception:
