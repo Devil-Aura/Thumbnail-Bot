@@ -65,37 +65,38 @@ def _short_title(title: str) -> str:
 def _powered_caption(ps: dict) -> str:
     genres = ", ".join(ps["genres"][:5]) or "N/A"
     return (
-        f"⛩ <b>{ps['title']} [S{ps['season']:02d}]</b>\n"
-        f"<blockquote>"
+        f"<b>⛩ {ps['title']} [S{ps['season']:02d}]</b>\n"
+        f"<blockquote><b>"
         f"╭───────────────────\n"
-        f"├ ✨ <b>Ratings</b> - {ps['rating']} IMDB\n"
-        f"├ ❄️ <b>Season</b> - {ps['season']:02d}\n"
-        f"├ 🎬 <b>Episodes</b> - {ps['episodes']}\n"
-        f"├ 🔈 <b>Audio</b> - {ps['audio']}\n"
-        f"├ 📸 <b>Quality</b> - {ps['quality']}\n"
-        f"├ 🎭 <b>Genres</b> - {genres}\n"
+        f"├ ✨ Ratings - {ps['rating']} IMDB\n"
+        f"├ ❄️ Season - {ps['season']:02d}\n"
+        f"├ 🎬 Episodes - {ps['episodes']}\n"
+        f"├ 🔈 Audio - {ps['audio']}\n"
+        f"├ 📸 Quality - {ps['quality']}\n"
+        f"├ 🎭 Genres - {genres}\n"
         f"╰───────────────────"
-        f"</blockquote>\n"
-        f"• <b>𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗕𝘆:</b> @{CHANNEL}."
+        f"</b></blockquote>\n"
+        f"<b>• 𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗕𝘆:\n"
+        f"@{CHANNEL}.</b>"
     )
 
 
 def _final_caption(ps: dict, link: str) -> str:
     genres = ", ".join(ps["genres"][:5]) or "N/A"
     return (
-        f"⛩ <b>{ps['title']} [S{ps['season']:02d}]</b>\n"
-        f"<blockquote>"
+        f"<b>⛩ {ps['title']} [S{ps['season']:02d}]</b>\n"
+        f"<blockquote><b>"
         f"╭───────────────────\n"
-        f"├ ✨ <b>Ratings</b> - {ps['rating']} IMDB\n"
-        f"├ ❄️ <b>Season</b> - {ps['season']:02d}\n"
-        f"├ 🎬 <b>Episodes</b> - {ps['episodes']}\n"
-        f"├ 🔈 <b>Audio</b> - {ps['audio']}\n"
-        f"├ 📸 <b>Quality</b> - {ps['quality']}\n"
-        f"├ 🎭 <b>Genres</b> - {genres}\n"
+        f"├ ✨ Ratings - {ps['rating']} IMDB\n"
+        f"├ ❄️ Season - {ps['season']:02d}\n"
+        f"├ 🎬 Episodes - {ps['episodes']}\n"
+        f"├ 🔈 Audio - {ps['audio']}\n"
+        f"├ 📸 Quality - {ps['quality']}\n"
+        f"├ 🎭 Genres - {genres}\n"
         f"├───────────────────\n"
-        f"├ ⭕️ <a href='{link}'><b>Watch &amp; Download</b></a> ⭕️\n"
+        f"├ ⭕️ <a href='{link}'>Watch &amp; Download</a> ⭕️\n"
         f"╰──────────────────"
-        f"</blockquote>\n"
+        f"</b></blockquote>\n"
         f"<b>New Anime In Official Hindi Dub 🔥</b>"
     )
 
@@ -118,8 +119,8 @@ def _anilist_caption(al: dict, anime_title: str) -> str:
         f"‣ <b>Synopsis</b> : \"{syn}\""
     )
     return (
-        f"<b>{anime_title} In Hindi Dub Available On @{CHANNEL}...!!</b>\n"
-        f"<blockquote>{inner}</blockquote>"
+        f"<b>{anime_title} In Hindi Dub Available On @{CHANNEL}...!!</b>\n\n"
+        f"<blockquote expandable>{inner}</blockquote>"
     )
 
 
