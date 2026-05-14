@@ -1,6 +1,7 @@
 """
 /update — Pull latest changes from GitHub and restart the bot (owner only).
 Shows a professional changelog: new commits + changed files, then hot-restarts.
+Runs at group=-2 so it always fires before the pvt gate.
 """
 import asyncio
 import os
@@ -17,7 +18,8 @@ def _is_owner(uid: int) -> bool:
     return uid == OWNER_ID
 
 
-@Client.on_message(filters.command("update") & filters.private)
+# group=-2 → runs BEFORE pvt_gate (group=-1), owner check is inside
+@Client.on_message(filters.command("update") & filters.private, group=-2)
 async def update_cmd(client: Client, message: Message):
     if not _is_owner(message.from_user.id):
         await message.reply_text(
@@ -42,7 +44,8 @@ async def update_cmd(client: Client, message: Message):
 
     # ── git fetch + pull ───────────────────────────────────────────────────────
     try:
-        subprocess.run(["git", "fetch", "--all"], capture_output=True, timeout=30)
+        subprocess.run(["git", "fetch", "--all"],
+                       capture_output=True, timeout=30)
         pull = subprocess.run(
             ["git", "pull"],
             capture_output=True, text=True, timeout=60,
@@ -57,7 +60,7 @@ async def update_cmd(client: Client, message: Message):
         return
     except FileNotFoundError:
         await status.edit_text(
-            "❌ <b>Update failed</b> — <code>git</code> is not installed on this server.",
+            "❌ <b>Update failed</b> — <code>git</code> is not installed.",
             parse_mode=enums.ParseMode.HTML,
         )
         return
@@ -73,23 +76,23 @@ async def update_cmd(client: Client, message: Message):
         )
         return
 
-    # ── New commits log ────────────────────────────────────────────────────────
+    # ── New commits ────────────────────────────────────────────────────────────
     commits_text = ""
     try:
         raw_log = subprocess.run(
-            ["git", "log", "--pretty=format:%h ─ %s (%an)", f"{before}..HEAD"],
+            ["git", "log", "--pretty=format:%h ─ %s", f"{before}..HEAD"],
             capture_output=True, text=True, timeout=10,
         ).stdout.strip()
         if raw_log:
             lines = raw_log.split("\n")[:12]
             commits_text = "\n".join(
-                f"  {'└' if i == len(lines)-1 else '├'} <code>{l}</code>"
+                f"  {'└' if i == len(lines) - 1 else '├'} <code>{l}</code>"
                 for i, l in enumerate(lines)
             )
     except Exception:
         pass
 
-    # ── Changed files ──────────────────────────────────────────────────────────
+    # ── Changed files with status icons ───────────────────────────────────────
     files_text = ""
     try:
         raw_files = subprocess.run(
@@ -98,9 +101,8 @@ async def update_cmd(client: Client, message: Message):
         ).stdout.strip()
         if raw_files:
             icons = {"A": "🟢", "M": "🟡", "D": "🔴", "R": "🔵"}
-            file_lines = raw_files.split("\n")[:15]
             flines = []
-            for fl in file_lines:
+            for fl in raw_files.split("\n")[:15]:
                 parts = fl.split("\t", 1)
                 if len(parts) == 2:
                     icon = icons.get(parts[0][0], "⚪")
@@ -111,26 +113,25 @@ async def update_cmd(client: Client, message: Message):
     except Exception:
         pass
 
-    # ── Compose changelog ──────────────────────────────────────────────────────
-    now = datetime.now().strftime("%d %b %Y · %H:%M UTC")
+    # ── Build changelog ────────────────────────────────────────────────────────
+    now = datetime.now().strftime("%d %b %Y · %H:%M")
     msg = (
         "✅ <b>Update Successful!</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🕐 <b>Updated at:</b> {now}\n"
     )
-
     if commits_text:
         msg += f"\n📝 <b>New Commits:</b>\n{commits_text}\n"
-
     if files_text:
-        msg += f"\n📁 <b>Changed Files:</b>\n"
-        msg += "<blockquote>" + files_text + "\n\n"
-        msg += "🟢 Added  🟡 Modified  🔴 Deleted  🔵 Renamed</blockquote>\n"
-
+        msg += (
+            f"\n📁 <b>Changed Files:</b>\n"
+            f"<blockquote>{files_text}\n\n"
+            f"🟢 Added  🟡 Modified  🔴 Deleted  🔵 Renamed</blockquote>\n"
+        )
     msg += "\n⚡ <b>Restarting bot in 3 seconds...</b>"
 
     await status.edit_text(msg, parse_mode=enums.ParseMode.HTML)
     await asyncio.sleep(3)
 
-    # ── Hot restart — replaces current process, no daemon restart needed ───────
+    # ── Hot restart ────────────────────────────────────────────────────────────
     os.execv(sys.executable, [sys.executable] + sys.argv)
