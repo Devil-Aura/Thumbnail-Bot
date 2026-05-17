@@ -232,6 +232,16 @@ async def _download(url: str) -> Optional[bytes]:
 
 
 async def _fetch_data(name: str, season: int) -> dict:
+    try:
+        return await _fetch_data_inner(name, season)
+    except aiohttp.ClientConnectorError:
+        raise  # re-raise so anime_cmd can show a network error message
+    except Exception as e:
+        logger.error("_fetch_data error: %s", e)
+        raise
+
+
+async def _fetch_data_inner(name: str, season: int) -> dict:
     async with aiohttp.ClientSession() as sess:
         search   = await _tmdb(sess, "/search/tv", query=name, language="en-US")
         results  = search.get("results", [])
@@ -363,7 +373,29 @@ async def anime_cmd(client: Client, message: Message):
         parse_mode=enums.ParseMode.HTML,
     )
 
-    data = await _fetch_data(query, season)
+    try:
+        data = await _fetch_data(query, season)
+    except aiohttp.ClientConnectorError:
+        await wait.edit_text(
+            "❌ <b>Network Error</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Cannot reach <b>TMDB</b> — the server has no internet access.\n\n"
+            "<blockquote>"
+            "This usually means your hosting platform blocks outbound\n"
+            "connections. Make sure your server allows HTTPS requests\n"
+            "to <code>api.themoviedb.org</code>."
+            "</blockquote>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+    except Exception as e:
+        await wait.edit_text(
+            f"❌ <b>Unexpected error while fetching data.</b>\n"
+            f"<blockquote><code>{type(e).__name__}: {e}</code></blockquote>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
     if not data or not data.get("images"):
         await wait.edit_text(
             f"❌ No results for <b>{query}</b>. Check the spelling and try again.",
