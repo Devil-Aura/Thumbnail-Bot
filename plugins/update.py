@@ -100,19 +100,19 @@ async def update_cmd(client: Client, message: Message):
         before = ""
         branch = "main"
 
-    # ── Pull ─────────────────────────────────────────────────────────────────
+    # ── Fetch + hard-reset (never blocked by local changes) ──────────────────
     try:
-        subprocess.run(["git", "fetch", "--all"], capture_output=True, timeout=30)
-        pull = subprocess.run(
-            ["git", "pull"],
-            capture_output=True, text=True, timeout=60,
+        fetch = subprocess.run(
+            ["git", "fetch", "--all"],
+            capture_output=True, text=True, timeout=30,
         )
-        pull_out = pull.stdout.strip()
+        if fetch.returncode != 0:
+            raise RuntimeError(fetch.stderr.strip() or "git fetch failed")
     except subprocess.TimeoutExpired:
         await status.edit_text(
             "❌ <b>Update Failed</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "⏱ <code>git pull</code> timed out after 60s.\n"
+            "⏱ <code>git fetch</code> timed out after 30s.\n"
             "Check your network connection and try again.",
             parse_mode=enums.ParseMode.HTML,
         )
@@ -125,9 +125,25 @@ async def update_cmd(client: Client, message: Message):
             parse_mode=enums.ParseMode.HTML,
         )
         return
+    except RuntimeError as e:
+        await status.edit_text(
+            "❌ <b>Update Failed</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote><code>{e}</code></blockquote>",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
 
-    # ── Already up to date ───────────────────────────────────────────────────
-    if "Already up to date" in pull_out or "Already up-to-date" in pull_out:
+    # ── Check if already up to date (compare SHAs before touching anything) ──
+    try:
+        remote_sha = subprocess.run(
+            ["git", "rev-parse", f"origin/{branch}"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except Exception:
+        remote_sha = ""
+
+    if remote_sha and remote_sha == before:
         now = datetime.now().strftime("%d %b %Y · %H:%M")
         await status.edit_text(
             "✅ <b>Already Up To Date</b>\n"
@@ -136,6 +152,31 @@ async def update_cmd(client: Client, message: Message):
             f"🔖 <b>Commit:</b>  <code>{_short(before)}</code>\n"
             f"📅 <b>Checked:</b> <code>{now}</code>\n\n"
             "No new changes on GitHub. Bot is already on the latest version.",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+
+    # ── Hard reset — discards local changes, never conflicts ─────────────────
+    try:
+        reset = subprocess.run(
+            ["git", "reset", "--hard", f"origin/{branch}"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if reset.returncode != 0:
+            raise RuntimeError(reset.stderr.strip() or "git reset failed")
+    except subprocess.TimeoutExpired:
+        await status.edit_text(
+            "❌ <b>Update Failed</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "⏱ <code>git reset</code> timed out after 60s.",
+            parse_mode=enums.ParseMode.HTML,
+        )
+        return
+    except RuntimeError as e:
+        await status.edit_text(
+            "❌ <b>Update Failed</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote><code>{e}</code></blockquote>",
             parse_mode=enums.ParseMode.HTML,
         )
         return
