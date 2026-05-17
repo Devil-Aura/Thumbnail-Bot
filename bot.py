@@ -1,7 +1,15 @@
 import asyncio
+import logging
 from pyrogram import Client
 from config import API_ID, API_HASH, BOT_TOKEN
 from database.db import Database
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s — %(message)s",
+    datefmt="%d %b %Y %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
 async def main():
@@ -16,9 +24,14 @@ async def main():
     db = Database()
     bot.db = db
 
-    print("ꜱᴛᴀʀᴛɪɴɢ ʙᴏᴛ...")
+    # Attach Telegram log handler BEFORE starting, so it's ready when bot starts
+    from plugins.tg_logger import setup_tg_logger
+    setup_tg_logger(bot)
+
+    logger.info("Starting bot...")
     async with bot:
-        print("ʙᴏᴛ ɪꜱ ʀᴜɴɴɪɴɢ ✅")
+        me = await bot.get_me()
+        logger.info("Bot running as @%s (id=%s)", me.username, me.id)
         await asyncio.Event().wait()
 
 
