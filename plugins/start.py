@@ -6,24 +6,26 @@ from config import START_PIC
 
 START_TEXT = (
     "<b>🎌 Anime Thumbnail Bot</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "I create professional <b>CrunchyRoll-style 1280×720</b> anime thumbnails "
-    "using TMDB &amp; FANART.TV artwork.\n\n"
-    "<b>✨ Features:</b>\n"
-    "├ 🖼 Generate anime thumbnails\n"
-    "├ 🎨 Pan, zoom &amp; swap artwork\n"
-    "├ 📢 Post to GFX &amp; Cover channels\n"
-    "└ ⚙️ Per-user channel settings\n\n"
-    "<b>🚀 Start with /anime &lt;name&gt;</b>"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "Welcome! I generate professional <b>16:9 anime thumbnails</b>\n"
+    "in CrunchyRoll style using TMDB &amp; FANART.TV artwork.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "<b>✨ What I can do:</b>\n"
+    "  🖼  Generate 1280×720 anime thumbnails\n"
+    "  🎨  Pan, zoom &amp; cycle through artwork\n"
+    "  📢  Auto-post to your GFX &amp; Cover channels\n"
+    "  ⚙️  Per-user channel management\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🚀 <b>Get started:</b>  <code>/anime Demon Slayer</code>"
 )
 
 START_KB = InlineKeyboardMarkup([
     [
-        InlineKeyboardButton("📖 Help",     callback_data="start|help"),
-        InlineKeyboardButton("⚙️ Settings", callback_data="start|settings"),
+        InlineKeyboardButton("📖 Help",      callback_data="start|help"),
+        InlineKeyboardButton("⚙️ Settings",  callback_data="start|settings"),
     ],
     [
-        InlineKeyboardButton("📢 Channel", url="https://t.me/CrunchyRollChannel"),
+        InlineKeyboardButton("📢 Channel",  url="https://t.me/CrunchyRollChannel"),
         InlineKeyboardButton("👨‍💻 Support", url="https://t.me/CrunchyRollChannel"),
     ],
 ])
