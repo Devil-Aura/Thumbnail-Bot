@@ -2,7 +2,7 @@
 /anime <name> [S01]
 
 Flow:
-  1. Preview thumbnail  → pan/zoom/image-swap controls
+  1. Preview thumbnail  → pan/zoom/image-swap + logo-toggle controls
   2. ✅ Done  → spoiler 4K BG + AniList expandable info
              → thumbnail + Powered By + [📢 Main Post] [🎬 Anime GFX] [🖼 Cover]
   3. [📢 Main Post]  → ask for Watch & Download link → final post
@@ -17,6 +17,7 @@ from typing import Optional
 
 import aiohttp
 from pyrogram import Client, enums, filters
+from pyrogram.errors import MessageNotModified
 from pyrogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -33,13 +34,12 @@ logger = logging.getLogger(__name__)
 
 TMDB_BASE   = "https://api.themoviedb.org/3"
 TMDB_POST   = "https://image.tmdb.org/t/p/w780"
-TMDB_BACK   = "https://image.tmdb.org/t/p/w1280"
+TMDB_BACK   = "https://image.tmdb.org/t/p/original"   # 4K originals
 FANART_BASE = "https://webservice.fanart.tv/v3"
 CHANNEL     = "CrunchyRollChannel"
 
 # ── Safe caption sender — falls back if blockquote not supported ─────────────
 def _strip_bq(text: str) -> str:
-    """Strip blockquote tags for Pyrogram versions that don't support them."""
     return (text
         .replace("<blockquote expandable>", "")
         .replace("<blockquote>", "")
@@ -48,7 +48,6 @@ def _strip_bq(text: str) -> str:
 
 async def _send_photo_caption(target, photo, caption, *, reply_markup=None,
                                has_spoiler=False, **kw):
-    """Send photo with HTML caption; retry without blockquote on parse error."""
     from pyrogram import enums
     kwargs = dict(parse_mode=enums.ParseMode.HTML)
     if reply_markup:
@@ -63,7 +62,6 @@ async def _send_photo_caption(target, photo, caption, *, reply_markup=None,
 
 
 async def _reply_caption(target, caption, *, reply_markup=None, **kw):
-    """Send text caption; retry without blockquote on parse error."""
     from pyrogram import enums
     kwargs = dict(parse_mode=enums.ParseMode.HTML)
     if reply_markup:
@@ -92,7 +90,6 @@ GFX_CAPTION = (
 
 # ── Short title helper ────────────────────────────────────────────────────────
 def _short_title(title: str) -> str:
-    """Return roughly the first half of the title (word-boundary)."""
     words = title.split()
     half  = max(1, len(words) // 2)
     return " ".join(words[:half])
@@ -163,11 +160,16 @@ def _anilist_caption(al: dict, anime_title: str) -> str:
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 def _preview_kb(uid: int) -> InlineKeyboardMarkup:
-    s   = sessions[uid]
-    idx = s["img_idx"]
-    tot = len(s["images"])
-    pct = int(s["scale"] * 100)
-    return InlineKeyboardMarkup([
+    s        = sessions[uid]
+    idx      = s["img_idx"]
+    tot      = len(s["images"])
+    pct      = int(s["scale"] * 100)
+    has_logo = bool(s.get("logo_urls"))
+    use_logo = s.get("use_logo", False)
+
+    logo_label = "✅ 🔤 Logo ON" if use_logo else ("🔤 Logo" if has_logo else "🔤 No Logo")
+
+    rows = [
         [
             InlineKeyboardButton("◀️ ᴩʀᴇᴠ",         callback_data=f"an|prev|{uid}"),
             InlineKeyboardButton(f"🖼 {idx+1}/{tot}", callback_data="an|noop"),
@@ -188,8 +190,12 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(f"🔍 {pct}%",  callback_data="an|noop"),
             InlineKeyboardButton("➕",          callback_data=f"an|zin|{uid}"),
         ],
+        [
+            InlineKeyboardButton(logo_label, callback_data=f"an|logo|{uid}"),
+        ],
         [InlineKeyboardButton("✅  ᴅᴏɴᴇ", callback_data=f"an|done|{uid}")],
-    ])
+    ]
+    return InlineKeyboardMarkup(rows)
 
 
 def _post_kb(uid: int, gfx_done: bool = False, cover_done: bool = False) -> InlineKeyboardMarkup:
@@ -235,7 +241,7 @@ async def _fetch_data(name: str, season: int) -> dict:
     try:
         return await _fetch_data_inner(name, season)
     except aiohttp.ClientConnectorError:
-        raise  # re-raise so anime_cmd can show a network error message
+        raise
     except Exception as e:
         logger.error("_fetch_data error: %s", e)
         raise
@@ -274,19 +280,40 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
         else:
             episodes, season = 1, 1
 
-        img_data  = await _tmdb(sess, f"/{media}/{tmdb_id}/images")
-        posters   = [
+        # ── Images: request no-language backdrops (language=null gives
+        #    the clean key-visual shots without burned-in title text) ──────────
+        img_data = await _tmdb(
+            sess, f"/{media}/{tmdb_id}/images",
+            include_image_language="null,en",
+        )
+
+        posters = [
             f"{TMDB_POST}{p['file_path']}"
             for p in sorted(img_data.get("posters", []),
                             key=lambda x: x.get("vote_average", 0), reverse=True)[:8]
         ]
-        backdrops = [
-            f"{TMDB_BACK}{b['file_path']}"
-            for b in sorted(img_data.get("backdrops", []),
-                            key=lambda x: x.get("vote_average", 0), reverse=True)[:6]
+        # 4K originals, no-language first, then english-captioned as fallback
+        backdrops_raw = img_data.get("backdrops", [])
+        backdrops_no_lang = [
+            b for b in backdrops_raw
+            if not b.get("iso_639_1")           # null / empty = no language
         ]
-        all_images  = posters + backdrops
+        backdrops_rest = [
+            b for b in backdrops_raw
+            if b.get("iso_639_1")
+        ]
+        # Sort each group by vote_average desc
+        backdrops_no_lang.sort(key=lambda x: x.get("vote_average", 0), reverse=True)
+        backdrops_rest.sort(key=lambda x: x.get("vote_average", 0), reverse=True)
+        # Prefer no-language, top 8; append english-captioned as fallback
+        backdrop_urls = (
+            [f"{TMDB_BACK}{b['file_path']}" for b in backdrops_no_lang[:8]] +
+            [f"{TMDB_BACK}{b['file_path']}" for b in backdrops_rest[:4]]
+        )
+
+        all_images  = posters + backdrop_urls
         fanart_bgs: list[str] = []
+        logo_urls:  list[str] = []
 
         if not is_movie:
             try:
@@ -299,10 +326,27 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
                         timeout=aiohttp.ClientTimeout(total=10),
                     ) as fr:
                         fd = await fr.json()
+
+                    # 4K Fanart backgrounds
                     for art in fd.get("showbackground", [])[:8]:
                         url = art.get("url", "")
                         if url:
                             fanart_bgs.append(url)
+
+                    # HD ClearLOGO — prefer English, fallback to any
+                    for art in sorted(fd.get("hdtvlogo", []),
+                                      key=lambda x: (x.get("lang", "") == "en", int(x.get("likes", 0))),
+                                      reverse=True)[:5]:
+                        url = art.get("url", "")
+                        if url:
+                            logo_urls.append(url)
+                    # Fallback: clearlogo (lower-res)
+                    if not logo_urls:
+                        for art in fd.get("clearlogo", [])[:3]:
+                            url = art.get("url", "")
+                            if url:
+                                logo_urls.append(url)
+
                     for key in ("tvposter", "characterart", "tvthumb"):
                         for art in fd.get(key, [])[:3]:
                             url = art.get("url", "")
@@ -319,7 +363,8 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
             "genres":      genres,
             "description": overview,
             "images":      all_images,
-            "fanart_bgs":  fanart_bgs or backdrops[:4],
+            "fanart_bgs":  fanart_bgs or backdrop_urls[:4],
+            "logo_urls":   logo_urls,
             "season":      season,
         }
 
@@ -328,6 +373,12 @@ async def _render(s: dict) -> Optional[bytes]:
     bg = await _download(s["images"][s["img_idx"]])
     if not bg:
         return None
+
+    # Download logo if use_logo is enabled and we have logo URLs
+    logo_bytes: Optional[bytes] = None
+    if s.get("use_logo") and s.get("logo_urls"):
+        logo_bytes = await _download(s["logo_urls"][0])
+
     return make_anime_thumbnail(
         art_bytes=bg,
         title=s["title"],
@@ -341,6 +392,7 @@ async def _render(s: dict) -> Optional[bytes]:
         offset_x=s["offset_x"],
         offset_y=s["offset_y"],
         scale=s["scale"],
+        logo_bytes=logo_bytes,
     )
 
 
@@ -412,8 +464,12 @@ async def anime_cmd(client: Client, message: Message):
         "offset_x": 0,
         "offset_y": 0,
         "scale":    1.0,
+        "use_logo": False,
         "chat_id":  message.chat.id,
     }
+
+    has_logo = bool(data.get("logo_urls"))
+    logo_note = "  •  🔤 Logo available" if has_logo else ""
 
     thumb = await _render(sessions[uid])
     await wait.delete()
@@ -422,12 +478,14 @@ async def anime_cmd(client: Client, message: Message):
         sessions.pop(uid, None)
         return
 
+    photo_io      = io.BytesIO(thumb)
+    photo_io.name = "thumb.jpg"
     await message.reply_photo(
-        photo=io.BytesIO(thumb),
+        photo=photo_io,
         caption=(
             f"🎨 <b>{data['title']}</b> — S{data['season']:02d}\n"
             f"<i>{', '.join(data['genres'][:3])}</i>\n\n"
-            "⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
+            f"⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image{logo_note}"
         ),
         reply_markup=_preview_kb(uid),
         parse_mode=enums.ParseMode.HTML,
@@ -497,9 +555,13 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
         ps["gfx_done"] = True
 
-        await cq.message.edit_reply_markup(
-            reply_markup=_post_kb(uid, gfx_done=True, cover_done=ps.get("cover_done", False))
-        )
+        try:
+            await cq.message.edit_reply_markup(
+                reply_markup=_post_kb(uid, gfx_done=True, cover_done=ps.get("cover_done", False))
+            )
+        except MessageNotModified:
+            pass
+
         if sent_count:
             alert = f"✅ Sent to {sent_count} GFX channel(s)!"
             if fail_msgs:
@@ -548,9 +610,13 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
         ps["cover_done"] = True
 
-        await cq.message.edit_reply_markup(
-            reply_markup=_post_kb(uid, gfx_done=ps.get("gfx_done", False), cover_done=True)
-        )
+        try:
+            await cq.message.edit_reply_markup(
+                reply_markup=_post_kb(uid, gfx_done=ps.get("gfx_done", False), cover_done=True)
+            )
+        except MessageNotModified:
+            pass
+
         if sent_count:
             alert = f"✅ Sent to {sent_count} Cover channel(s)!"
             if fail_msgs:
@@ -598,6 +664,14 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         s["scale"] = max(1.0, round(s["scale"] - STEP_SCALE, 2))
         await cq.answer(f"🔍 {int(s['scale']*100)}%")
 
+    elif action == "logo":
+        if not s.get("logo_urls"):
+            await cq.answer("⚠️ No ClearLogo available for this anime on Fanart.tv", show_alert=True)
+            return
+        s["use_logo"] = not s.get("use_logo", False)
+        state = "ON ✅" if s["use_logo"] else "OFF"
+        await cq.answer(f"🔤 Logo {state}")
+
     elif action == "done":
         redraw = False
         await cq.answer("⏳ Generating...", show_alert=False)
@@ -622,7 +696,10 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         post_sessions[uid]["cover_done"] = False
         sessions.pop(uid, None)
 
-        await cq.message.edit_reply_markup(reply_markup=None)
+        try:
+            await cq.message.edit_reply_markup(reply_markup=None)
+        except MessageNotModified:
+            pass
 
         # Step 1 — Spoiler image + AniList
         ps       = post_sessions[uid]
@@ -638,14 +715,18 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         )
 
         if spoiler:
+            sp_io      = io.BytesIO(spoiler)
+            sp_io.name = "spoiler.jpg"
             await _send_photo_caption(
-                cq.message, io.BytesIO(spoiler), al_cap, has_spoiler=True)
+                cq.message, sp_io, al_cap, has_spoiler=True)
         else:
             await _reply_caption(cq.message, al_cap)
 
         # Step 2 — Thumbnail + Powered By + action buttons
+        th_io      = io.BytesIO(ps["thumb"])
+        th_io.name = "thumb.jpg"
         await _send_photo_caption(
-            cq.message, io.BytesIO(ps["thumb"]),
+            cq.message, th_io,
             _powered_caption(ps), reply_markup=_post_kb(uid))
         return
 
@@ -653,23 +734,31 @@ async def anime_cb(client: Client, cq: CallbackQuery):
     if redraw:
         thumb = await _render(s)
         if not thumb:
-            await cq.message.edit_caption(
-                "❌ Image failed. Try next ▶️",
-                parse_mode=enums.ParseMode.HTML,
-            )
+            try:
+                await cq.message.edit_caption(
+                    "❌ Image failed. Try next ▶️",
+                    parse_mode=enums.ParseMode.HTML,
+                )
+            except MessageNotModified:
+                pass
             return
-        await cq.message.edit_media(
-            InputMediaPhoto(
-                media=io.BytesIO(thumb),
-                caption=(
-                    f"🎨 <b>{s['title']}</b> — S{s['season']:02d}\n"
-                    f"<i>{', '.join(s['genres'][:3])}</i>\n\n"
-                    "⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
+        try:
+            th_io      = io.BytesIO(thumb)
+            th_io.name = "thumb.jpg"
+            await cq.message.edit_media(
+                InputMediaPhoto(
+                    media=th_io,
+                    caption=(
+                        f"🎨 <b>{s['title']}</b> — S{s['season']:02d}\n"
+                        f"<i>{', '.join(s['genres'][:3])}</i>\n\n"
+                        f"⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
+                    ),
+                    parse_mode=enums.ParseMode.HTML,
                 ),
-                parse_mode=enums.ParseMode.HTML,
-            ),
-            reply_markup=_preview_kb(uid),
-        )
+                reply_markup=_preview_kb(uid),
+            )
+        except MessageNotModified:
+            pass
 
 
 # ── Link collection ────────────────────────────────────────────────────────────
@@ -685,6 +774,8 @@ async def link_handler(client: Client, message: Message):
     ps   = post_sessions.pop(uid)
     pending_link.discard(uid)
 
+    th_io      = io.BytesIO(ps["thumb"])
+    th_io.name = "thumb.jpg"
     await _send_photo_caption(
-        message, io.BytesIO(ps["thumb"]),
+        message, th_io,
         _final_caption(ps, link), reply_markup=_final_kb(link))
