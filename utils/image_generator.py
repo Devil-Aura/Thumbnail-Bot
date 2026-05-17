@@ -12,7 +12,8 @@ Grading  : Contrast=1.20, Color=1.15, Sharpness=1.30
 
 Layout (y positions):
   NAV  : 0-52
-  Title: x=40, y=70
+  Logo : x=40, y=60  (if logo_bytes provided — replaces title text)
+  Title: x=40, y=70  (if no logo)
   Meta : title_bottom + 18
   Desc : meta_bottom + 14
   Genre: desc_bottom + 16
@@ -117,14 +118,13 @@ def _gradient_button(canvas, x, y, w, h, radius, text, font):
     sd    = ImageDraw.Draw(strip)
     for xi in range(w):
         t  = xi / max(w - 1, 1)
-        rr = int(235 - 50 * t)   # 235→185
-        gg = int(80  - 55 * t)   # 80→25
+        rr = int(235 - 50 * t)
+        gg = int(80  - 55 * t)
         sd.line([(xi, 0), (xi, h)], fill=(rr, gg, 10, 255))
     mask = Image.new("L", (w, h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([(0,0),(w-1,h-1)], radius=radius, fill=255)
     btn = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     btn.paste(strip, mask=mask)
-    # Subtle drop shadow
     shad = Image.new("RGBA", (w+10, h+10), (0, 0, 0, 0))
     shad.paste(Image.new("RGBA", (w, h), (0, 0, 0, 90)), (5, 5), mask)
     shad = shad.filter(ImageFilter.GaussianBlur(8))
@@ -136,6 +136,31 @@ def _gradient_button(canvas, x, y, w, h, radius, text, font):
     ty   = y + (h - (bb[3]-bb[1])) // 2
     draw.text((tx, ty), text, font=font, fill=(255, 255, 255, 255))
     return draw
+
+
+def _composite_clearlogo(canvas: Image.Image, logo_bytes: bytes,
+                          x: int, y: int, max_w: int, max_h: int) -> int:
+    """
+    Composite a Fanart.tv ClearLOGO (PNG with transparency) onto canvas.
+    The logo is scaled to fit within max_w x max_h, preserving aspect ratio.
+    Returns the bottom y coordinate of the placed logo.
+    """
+    try:
+        logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+        lw, lh = logo.size
+        scale  = min(max_w / lw, max_h / lh, 1.0)
+        nw, nh = int(lw * scale), int(lh * scale)
+        logo   = logo.resize((nw, nh), Image.LANCZOS)
+
+        # Add a very subtle drop shadow for readability over light art
+        shadow = Image.new("RGBA", (nw + 8, nh + 8), (0, 0, 0, 0))
+        shadow.paste(Image.new("RGBA", (nw, nh), (0, 0, 0, 120)), (4, 4), logo)
+        shadow = shadow.filter(ImageFilter.GaussianBlur(6))
+        canvas.alpha_composite(shadow, (x - 4, y - 4))
+        canvas.alpha_composite(logo, (x, y))
+        return y + nh
+    except Exception:
+        return y  # If logo load fails, return unchanged y so text renders normally
 
 
 def make_anime_thumbnail(
@@ -151,6 +176,7 @@ def make_anime_thumbnail(
     offset_x: int = 0,
     offset_y: int = 0,
     scale: float = 1.0,
+    logo_bytes: Optional[bytes] = None,
 ) -> bytes:
     scale = max(1.0, min(scale, 3.0))
 
@@ -161,30 +187,25 @@ def make_anime_thumbnail(
     if art_bytes:
         art = Image.open(io.BytesIO(art_bytes)).convert("RGBA")
         aw, ah = art.size
-        # Scale to fill right zone height
         fit = (H / ah) * scale
         sw, sh = int(aw * fit), int(ah * fit)
         art = art.resize((sw, sh), Image.LANCZOS)
-        # Overflow right edge: char starts at ~center, bleeds right
         char_x = W - sw + int(sw * 0.22) + offset_x
         char_x = max(LEFT_END - 80, min(char_x, W - 100))
         oy     = max(0, min(offset_y, max(0, sh - H)))
         crop   = art.crop((0, oy, sw, oy + H))
         canvas.paste(crop, (char_x, 0), crop)
 
-    # ── 3. Warm atmospheric glow in transition zone (behind character) ────────
+    # ── 3. Warm atmospheric glow ──────────────────────────────────────────────
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse([(640, -60), (1380, 760)], fill=(*AMBER, 42))
     glow = glow.filter(ImageFilter.GaussianBlur(120))
     canvas = Image.alpha_composite(canvas, glow)
 
     # ── 4. Cinematic LEFT GRADIENT ────────────────────────────────────────────
-    # Zone A: 0 → LEFT_END (576px) — SOLID BLACK
-    # Zone B: LEFT_END → 960px    — smooth fade black→transparent
-    # Zone C: 960px+ — transparent
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd   = ImageDraw.Draw(grad)
-    FADE_START = LEFT_END          # 576
+    FADE_START = LEFT_END
     FADE_END   = 960
     for x in range(W):
         if x <= FADE_START:
@@ -196,7 +217,6 @@ def make_anime_thumbnail(
             alpha = 0
         if alpha > 0:
             gd.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
-    # Feather only the transition zone (not the solid zone)
     grad_edge = grad.crop((FADE_START - 60, 0, FADE_END + 60, H))
     grad_edge = grad_edge.filter(ImageFilter.GaussianBlur(28))
     grad.paste(grad_edge, (FADE_START - 60, 0))
@@ -227,7 +247,7 @@ def make_anime_thumbnail(
     f_brand   = _f(_BOLD, 16)
     f_plus    = _f(_BOLD, 28)
 
-    # ── 8. Logo ───────────────────────────────────────────────────────────────
+    # ── 8. Nav logo ───────────────────────────────────────────────────────────
     _draw_logo(draw, 18, 11, channel_name, f_logo)
 
     # ── 9. Nav items ──────────────────────────────────────────────────────────
@@ -245,20 +265,29 @@ def make_anime_thumbnail(
         nx += iw + 55
     draw.text((W - 96, 17), "⌕  🔔  👤", font=f_nav, fill=(200,200,200,200))
 
-    # ── 10. Title  x=40, y=70 ─────────────────────────────────────────────────
+    # ── 10. Title / ClearLOGO ─────────────────────────────────────────────────
     TX, TY   = 40, 70
     MAX_TW   = 540
-    title_up = title.upper()
-    if len(title_up) <= 16:
-        f_t, lh = f_titl_lg, 100
-    else:
-        f_t, lh = f_titl_md, 88
 
-    lines = _wrap_to_px(draw, title_up, f_t, MAX_TW)
-    for i, ln in enumerate(lines):
-        _shadow_text(draw, (TX, TY + i * lh), ln, f_t,
-                     fill=(255,255,255,255), shadow=(0,0,0,200), offset=4)
-    cy = TY + len(lines) * lh + 18
+    if logo_bytes:
+        # Render the transparent Fanart.tv HD ClearLOGO instead of text title
+        # Max logo size: 480 wide, 160 tall — keeps it clear and large
+        cy = _composite_clearlogo(canvas, logo_bytes, TX, TY, max_w=480, max_h=160)
+        draw = ImageDraw.Draw(canvas)   # refresh draw after alpha_composite
+        cy += 18
+    else:
+        # Text title fallback
+        title_up = title.upper()
+        if len(title_up) <= 16:
+            f_t, lh = f_titl_lg, 100
+        else:
+            f_t, lh = f_titl_md, 88
+
+        lines = _wrap_to_px(draw, title_up, f_t, MAX_TW)
+        for i, ln in enumerate(lines):
+            _shadow_text(draw, (TX, TY + i * lh), ln, f_t,
+                         fill=(255,255,255,255), shadow=(0,0,0,200), offset=4)
+        cy = TY + len(lines) * lh + 18
 
     # ── 11. Subtitle ──────────────────────────────────────────────────────────
     subtitle = f"{year}  •  {episodes} Episodes  •  Hindi #Official"
@@ -334,7 +363,6 @@ def make_spoiler_bg(bg_bytes: bytes, channel: str) -> bytes:
     img   = img.resize((int(w*ratio), int(h*ratio)), Image.LANCZOS)
     img   = img.crop((0, 0, 1280, 720))
 
-    # Dark vignette bottom
     ov  = Image.new("RGBA", (1280, 720), (0,0,0,0))
     ovd = ImageDraw.Draw(ov)
     for y in range(720):
