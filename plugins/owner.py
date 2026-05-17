@@ -7,21 +7,17 @@ Owner-only commands:
   /broadcast <text>     — send a message to every user in the database
   /ban <user_id>        — ban a user from using the bot
   /unban <user_id>      — remove a ban
-  /shell <command>      — run a shell command on the server (dangerous!)
 """
 import asyncio
 import os
 import sys
-import io
 import time
-import subprocess
 from datetime import datetime, timezone
 
 from pyrogram import Client, enums, filters
 from pyrogram.types import Message
 from config import OWNER_ID
 
-# Track when the bot process started
 _START_TIME = datetime.now(timezone.utc)
 
 
@@ -60,8 +56,8 @@ async def restart_cmd(client: Client, message: Message):
     await message.reply_text(
         "🔄 <b>Restarting Bot...</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🕐 <b>Time:</b> <code>{now}</code>\n"
-        f"⏱ <b>Uptime before restart:</b> <code>{_uptime()}</code>\n\n"
+        f"📅 <b>Time   :</b>  <code>{now}</code>\n"
+        f"⏱ <b>Uptime :</b>  <code>{_uptime()}</code>\n\n"
         "⚡ Bot will be back in a few seconds.",
         parse_mode=enums.ParseMode.HTML,
     )
@@ -99,7 +95,6 @@ async def stats_cmd(client: Client, message: Message):
         )
         return
 
-    # Import live session counts from anime.py state
     try:
         from plugins.anime import sessions, post_sessions
         active_sessions = len(sessions)
@@ -113,16 +108,16 @@ async def stats_cmd(client: Client, message: Message):
     await status.edit_text(
         "📊 <b>Bot Statistics</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👥 <b>Total Users:</b> <code>{total_users}</code>\n"
-        f"🚫 <b>Banned Users:</b> <code>{banned_users}</code>\n"
-        f"👮 <b>Admins:</b> <code>{len(admins)}</code>\n"
-        f"🔐 <b>Bot Mode:</b> {mode_icon}\n"
+        f"👥 <b>Total Users  :</b>  <code>{total_users}</code>\n"
+        f"🚫 <b>Banned Users :</b>  <code>{banned_users}</code>\n"
+        f"👮 <b>Admins       :</b>  <code>{len(admins)}</code>\n"
+        f"🔐 <b>Bot Mode     :</b>  {mode_icon}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🎨 <b>Active Previews:</b> <code>{active_sessions}</code>\n"
-        f"📤 <b>Pending Posts:</b> <code>{post_s}</code>\n"
+        f"🎨 <b>Active Previews :</b>  <code>{active_sessions}</code>\n"
+        f"📤 <b>Pending Posts   :</b>  <code>{post_s}</code>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏱ <b>Uptime:</b> <code>{_uptime()}</code>\n"
-        f"🕐 <b>Checked at:</b> <code>{now}</code>",
+        f"⏱ <b>Uptime    :</b>  <code>{_uptime()}</code>\n"
+        f"📅 <b>Checked   :</b>  <code>{now}</code>",
         parse_mode=enums.ParseMode.HTML,
     )
 
@@ -135,7 +130,7 @@ async def stats_cmd(client: Client, message: Message):
 async def ping_cmd(client: Client, message: Message):
     start = time.monotonic()
     reply = await message.reply_text(
-        "🏓 <b>Pong!</b>",
+        "🏓 Measuring...",
         parse_mode=enums.ParseMode.HTML,
     )
     latency = (time.monotonic() - start) * 1000
@@ -143,8 +138,8 @@ async def ping_cmd(client: Client, message: Message):
     await reply.edit_text(
         "🏓 <b>Pong!</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚡ <b>Latency:</b> <code>{latency:.1f} ms</code>\n"
-        f"⏱ <b>Uptime:</b> <code>{_uptime()}</code>",
+        f"⚡ <b>Latency :</b>  <code>{latency:.1f} ms</code>\n"
+        f"⏱ <b>Uptime  :</b>  <code>{_uptime()}</code>",
         parse_mode=enums.ParseMode.HTML,
     )
 
@@ -176,7 +171,8 @@ async def broadcast_cmd(client: Client, message: Message):
         return
 
     status = await message.reply_text(
-        "📡 <b>Broadcasting...</b>",
+        "📡 <b>Broadcasting...</b>\n"
+        "<blockquote>Sending to all users, please wait.</blockquote>",
         parse_mode=enums.ParseMode.HTML,
     )
 
@@ -198,17 +194,17 @@ async def broadcast_cmd(client: Client, message: Message):
                 blocked += 1
             else:
                 failed += 1
-        await asyncio.sleep(0.05)   # ~20 msg/s, stay under limits
+        await asyncio.sleep(0.05)
 
     now = datetime.now().strftime("%d %b %Y · %H:%M")
     await status.edit_text(
         "📡 <b>Broadcast Complete!</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👥 <b>Total Users:</b> <code>{total}</code>\n"
-        f"✅ <b>Delivered:</b> <code>{sent}</code>\n"
-        f"🚫 <b>Blocked/Inactive:</b> <code>{blocked}</code>\n"
-        f"❌ <b>Failed:</b> <code>{failed}</code>\n"
-        f"🕐 <b>Finished at:</b> <code>{now}</code>",
+        f"👥 <b>Total Users  :</b>  <code>{total}</code>\n"
+        f"✅ <b>Delivered    :</b>  <code>{sent}</code>\n"
+        f"🚫 <b>Blocked      :</b>  <code>{blocked}</code>\n"
+        f"❌ <b>Failed       :</b>  <code>{failed}</code>\n"
+        f"📅 <b>Finished     :</b>  <code>{now}</code>",
         parse_mode=enums.ParseMode.HTML,
     )
 
@@ -244,10 +240,10 @@ async def ban_cmd(client: Client, message: Message):
 
     await client.db.ban_user(target)
     await message.reply_text(
-        f"🚫 <b>User Banned</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 <b>User ID:</b> <code>{target}</code>\n\n"
-        f"They can no longer use the bot.\n"
+        "🚫 <b>User Banned</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>User ID :</b>  <code>{target}</code>\n\n"
+        "They can no longer use the bot.\n"
         f"Use <code>/unban {target}</code> to restore access.",
         parse_mode=enums.ParseMode.HTML,
     )
@@ -273,74 +269,9 @@ async def unban_cmd(client: Client, message: Message):
     target = int(args[0])
     await client.db.unban_user(target)
     await message.reply_text(
-        f"✅ <b>User Unbanned</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 <b>User ID:</b> <code>{target}</code>\n\n"
-        f"They can use the bot again.",
-        parse_mode=enums.ParseMode.HTML,
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# /shell
-# ─────────────────────────────────────────────────────────────────────────────
-
-@Client.on_message(filters.command("shell") & filters.private, group=-2)
-async def shell_cmd(client: Client, message: Message):
-    if not _is_owner(message.from_user.id):
-        await message.reply_text(
-            "❌ <b>Owner only command.</b>",
-            parse_mode=enums.ParseMode.HTML,
-        )
-        return
-
-    cmd = " ".join(message.command[1:]).strip()
-    if not cmd:
-        await message.reply_text(
-            "⚠️ <b>Usage:</b> <code>/shell &lt;command&gt;</code>\n\n"
-            "<blockquote>⚠️ This executes shell commands directly on the server. "
-            "Use with extreme caution.</blockquote>",
-            parse_mode=enums.ParseMode.HTML,
-        )
-        return
-
-    status = await message.reply_text(
-        f"⚙️ <b>Running:</b> <code>{cmd}</code>",
-        parse_mode=enums.ParseMode.HTML,
-    )
-
-    try:
-        proc = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=30,
-        )
-        stdout = proc.stdout.strip()
-        stderr = proc.stderr.strip()
-        rc     = proc.returncode
-    except subprocess.TimeoutExpired:
-        await status.edit_text(
-            f"⏱ <b>Timed out</b> after 30s\n"
-            f"<code>{cmd}</code>",
-            parse_mode=enums.ParseMode.HTML,
-        )
-        return
-    except Exception as e:
-        await status.edit_text(
-            f"❌ <b>Error:</b> <code>{e}</code>",
-            parse_mode=enums.ParseMode.HTML,
-        )
-        return
-
-    icon = "✅" if rc == 0 else "❌"
-    out  = stdout or stderr or "(no output)"
-
-    # Truncate long output to fit Telegram's 4096-char limit
-    if len(out) > 3500:
-        out = out[:3500] + "\n…(truncated)"
-
-    await status.edit_text(
-        f"{icon} <b>Exit code:</b> <code>{rc}</code>\n"
-        f"<b>Command:</b> <code>{cmd}</code>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<blockquote><code>{out}</code></blockquote>",
+        "✅ <b>User Unbanned</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>User ID :</b>  <code>{target}</code>\n\n"
+        "They can now use the bot again.",
         parse_mode=enums.ParseMode.HTML,
     )
