@@ -5,53 +5,52 @@ from pyrogram.types import (
 
 HELP_TEXT = (
     "<b>📖 Help — Anime Thumbnail Bot</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "<b>🎌 Thumbnail Commands:</b>\n"
-    "├ /anime &lt;name&gt; — Generate thumbnail (Season 1)\n"
-    "├ /anime &lt;name&gt; S02 — Specify season number\n"
-    "└ /settings — Manage GFX &amp; Cover channels\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "<b>🎌 Generate Thumbnails:</b>\n"
+    "  <code>/anime &lt;name&gt;</code>          — Season 1 by default\n"
+    "  <code>/anime &lt;name&gt; S02</code>      — Specify season\n\n"
     "<b>🎨 Thumbnail Controls:</b>\n"
-    "├ ◀️ ▶️ — Cycle through artwork images\n"
-    "├ ⬆️⬇️⬅️➡️ — Pan the image position\n"
-    "├ ➕ ➖ — Zoom in / out\n"
-    "└ ✅ Done — Finalize &amp; post thumbnail\n\n"
-    "<b>📤 After Done:</b>\n"
-    "├ 🔒 Spoiler image with AniList info\n"
-    "├ 🖼 Thumbnail with Powered By caption\n"
-    "├ 📢 Main Post — add Watch &amp; Download link\n"
-    "├ 🎬 Anime GFX — send to your GFX channels\n"
-    "└ 🖼 Cover — send to your Cover channels\n\n"
+    "  ◀️ ▶️  — Cycle through artwork images\n"
+    "  ⬆️⬇️⬅️➡️ — Pan the image position\n"
+    "  ➕ ➖  — Zoom in / out\n"
+    "  ✅ Done — Finalize &amp; post the thumbnail\n\n"
+    "<b>📤 After Finalizing:</b>\n"
+    "  🔒  Spoiler image with AniList info\n"
+    "  🖼  Thumbnail with Powered By caption\n"
+    "  📢  Main Post — add Watch &amp; Download link\n"
+    "  🎬  GFX — send to your Anime GFX channels\n"
+    "  🖼  Cover — send to your Cover channels\n\n"
+    "<b>⚙️ Channel Settings:</b>\n"
+    "  <code>/settings</code> — Add or remove GFX &amp; Cover channels\n\n"
     "<b>🛠 Other Commands:</b>\n"
-    "├ /ping — Check bot response time\n"
-    "├ /help — Show this message\n"
-    "└ /start — Back to home\n\n"
+    "  <code>/ping</code>  — Check bot response time &amp; uptime\n"
+    "  <code>/start</code> — Back to home screen\n\n"
     "<b>💡 Examples:</b>\n"
-    "<code>/anime Fairy Tail</code>\n"
-    "<code>/anime One Piece S02</code>\n"
-    "<code>/anime Shield Hero S01</code>"
+    "  <code>/anime Fairy Tail</code>\n"
+    "  <code>/anime One Piece S02</code>\n"
+    "  <code>/anime Shield Hero S01</code>"
 )
 
 OWNER_HELP_TEXT = (
-    "<b>👑 Owner Commands</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "\n\n<b>👑 Owner Commands</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     "<b>🔧 Bot Management:</b>\n"
-    "├ /restart — Restart the bot immediately\n"
-    "├ /update — Pull latest code from GitHub &amp; restart\n"
-    "├ /update_repo &lt;url&gt; — Pull from a different repo &amp; restart\n"
-    "└ /shell &lt;cmd&gt; — Run a shell command on the server\n\n"
+    "  <code>/restart</code>              — Restart the bot immediately\n"
+    "  <code>/update</code>               — Pull latest code from GitHub &amp; restart\n"
+    "  <code>/update_repo &lt;url&gt;</code>  — Pull from a different repo &amp; restart\n\n"
     "<b>📊 Monitoring:</b>\n"
-    "├ /stats — Users, sessions, uptime &amp; mode\n"
-    "└ /ping — Bot latency &amp; uptime\n\n"
+    "  <code>/stats</code>  — Users, sessions, uptime &amp; mode\n"
+    "  <code>/ping</code>   — Bot latency &amp; uptime\n\n"
     "<b>📡 Broadcasting:</b>\n"
-    "└ /broadcast &lt;text&gt; — Send message to all users\n\n"
+    "  <code>/broadcast &lt;text&gt;</code>  — Send message to all users\n\n"
     "<b>🚫 User Control:</b>\n"
-    "├ /ban &lt;user_id&gt; — Ban a user from the bot\n"
-    "├ /unban &lt;user_id&gt; — Remove a ban\n"
-    "├ /addadmin &lt;user_id&gt; — Add an admin\n"
-    "├ /deladmin &lt;user_id&gt; — Remove an admin\n"
-    "├ /admins — List all admins\n"
-    "├ /pvt — Switch to private mode\n"
-    "└ /pub — Switch to public mode"
+    "  <code>/ban &lt;user_id&gt;</code>    — Ban a user from the bot\n"
+    "  <code>/unban &lt;user_id&gt;</code>  — Remove a ban\n"
+    "  <code>/addadmin &lt;id&gt;</code>    — Add an admin\n"
+    "  <code>/deladmin &lt;id&gt;</code>    — Remove an admin\n"
+    "  <code>/admins</code>               — List all admins\n"
+    "  <code>/pvt</code>  — Switch to private mode\n"
+    "  <code>/pub</code>  — Switch to public mode"
 )
 
 
@@ -60,10 +59,9 @@ async def help_cmd(client: Client, message: Message):
     from config import OWNER_ID
     uid = message.from_user.id
 
-    # Show owner commands section to the owner
     full_text = HELP_TEXT
     if uid == OWNER_ID:
-        full_text += f"\n\n{OWNER_HELP_TEXT}"
+        full_text += OWNER_HELP_TEXT
 
     await message.reply_text(
         full_text,
