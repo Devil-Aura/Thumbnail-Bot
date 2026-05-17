@@ -478,25 +478,35 @@ async def anime_cb(client: Client, cq: CallbackQuery):
             return
 
         sent_count = 0
+        fail_msgs  = []
         for ch in gfx_channels:
             try:
+                photo_io      = io.BytesIO(ps["thumb"])
+                photo_io.name = "thumb.jpg"
                 await client.send_photo(
                     chat_id=ch["id"],
-                    photo=io.BytesIO(ps["thumb"]),
+                    photo=photo_io,
                     caption=GFX_CAPTION,
                     parse_mode=enums.ParseMode.HTML,
                 )
                 sent_count += 1
             except Exception as e:
-                logger.warning("GFX send to %s failed: %s", ch["id"], e)
+                err = str(e)
+                logger.error("GFX send to %s failed: %s", ch.get("title", ch["id"]), err)
+                fail_msgs.append(f"• {ch.get('title', ch['id'])}: {err}")
 
         ps["gfx_done"] = True
 
-        # Update keyboard — turn GFX button green
         await cq.message.edit_reply_markup(
             reply_markup=_post_kb(uid, gfx_done=True, cover_done=ps.get("cover_done", False))
         )
-        await cq.answer(f"✅ Sent to {sent_count} GFX channel(s)!", show_alert=True)
+        if sent_count:
+            alert = f"✅ Sent to {sent_count} GFX channel(s)!"
+            if fail_msgs:
+                alert += f"\n⚠️ {len(fail_msgs)} failed — check /logs"
+        else:
+            alert = "❌ Failed to send to any GFX channel.\nCheck bot admin rights and /logs"
+        await cq.answer(alert, show_alert=True)
         return
 
     # ── Cover send ─────────────────────────────────────────────────────────────
@@ -519,24 +529,35 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
         short = _short_title(ps["title"])
         sent_count = 0
+        fail_msgs  = []
         for ch in cover_channels:
             try:
+                photo_io      = io.BytesIO(ps["thumb"])
+                photo_io.name = "thumb.jpg"
                 sent_msg = await client.send_photo(
                     chat_id=ch["id"],
-                    photo=io.BytesIO(ps["thumb"]),
+                    photo=photo_io,
                 )
                 cmd = ch.get("command", "/cover")
                 await sent_msg.reply_text(f"{cmd} {short}")
                 sent_count += 1
             except Exception as e:
-                logger.warning("Cover send to %s failed: %s", ch["id"], e)
+                err = str(e)
+                logger.error("Cover send to %s failed: %s", ch.get("title", ch["id"]), err)
+                fail_msgs.append(f"• {ch.get('title', ch['id'])}: {err}")
 
         ps["cover_done"] = True
 
         await cq.message.edit_reply_markup(
             reply_markup=_post_kb(uid, gfx_done=ps.get("gfx_done", False), cover_done=True)
         )
-        await cq.answer(f"✅ Sent to {sent_count} Cover channel(s)!", show_alert=True)
+        if sent_count:
+            alert = f"✅ Sent to {sent_count} Cover channel(s)!"
+            if fail_msgs:
+                alert += f"\n⚠️ {len(fail_msgs)} failed — check /logs"
+        else:
+            alert = "❌ Failed to send to any Cover channel.\nCheck bot admin rights and /logs"
+        await cq.answer(alert, show_alert=True)
         return
 
     # ── Preview controls ───────────────────────────────────────────────────────
