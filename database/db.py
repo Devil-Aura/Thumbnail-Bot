@@ -9,6 +9,7 @@ class Database:
         self.users    = self.db.users
         self.settings = self.db.settings   # bot-wide settings collection
         self.admins   = self.db.admins     # admin user IDs
+        self.banned   = self.db.banned     # banned user IDs
 
     # ── User ──────────────────────────────────────────────────────────────────
     async def add_user(self, user_id: int):
@@ -44,6 +45,11 @@ class Database:
 
     async def total_users(self) -> int:
         return await self.users.count_documents({})
+
+    async def get_all_user_ids(self) -> list[int]:
+        """Return a list of all user IDs in the database."""
+        cursor = self.users.find({}, {"user_id": 1})
+        return [doc["user_id"] async for doc in cursor]
 
     # ── GFX channels ──────────────────────────────────────────────────────────
     async def get_gfx_channels(self, user_id: int) -> list:
@@ -124,3 +130,25 @@ class Database:
     async def is_admin(self, user_id: int) -> bool:
         doc = await self.admins.find_one({"_id": "admin_list"})
         return user_id in (doc.get("ids", []) if doc else [])
+
+    # ── Ban management ────────────────────────────────────────────────────────
+    async def ban_user(self, user_id: int):
+        await self.banned.update_one(
+            {"_id": "ban_list"},
+            {"$addToSet": {"ids": user_id}},
+            upsert=True,
+        )
+
+    async def unban_user(self, user_id: int):
+        await self.banned.update_one(
+            {"_id": "ban_list"},
+            {"$pull": {"ids": user_id}},
+        )
+
+    async def is_banned(self, user_id: int) -> bool:
+        doc = await self.banned.find_one({"_id": "ban_list"})
+        return user_id in (doc.get("ids", []) if doc else [])
+
+    async def total_banned(self) -> int:
+        doc = await self.banned.find_one({"_id": "ban_list"})
+        return len(doc.get("ids", [])) if doc else 0
