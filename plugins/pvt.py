@@ -40,6 +40,14 @@ async def pvt_gate(client: Client, message: Message):
     if _is_owner(uid):
         return
 
+    # Check ban — banned users are blocked from everything, even /start
+    try:
+        if await client.db.is_banned(uid):
+            await message.stop_propagation()
+            return
+    except Exception:
+        pass  # DB error — don't block
+
     # /start and /help always pass through pvt gate
     if message.command and message.command[0].lower() in _OPEN_CMDS:
         return
