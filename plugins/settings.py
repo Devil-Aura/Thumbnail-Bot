@@ -205,15 +205,22 @@ async def settings_cb(client: Client, cq: CallbackQuery):
 # ── Text input handler for settings flow ──────────────────────────────────────
 @Client.on_message(filters.private)
 async def settings_input(client: Client, message: Message):
-    uid  = message.from_user.id
-    # Ignore commands and users not in settings flow
-    if message.text and message.text.startswith("/"):
-        return
+    uid = message.from_user.id
+
+    # Drop users who are not in any settings flow
     if uid not in settings_state:
         return
 
     state = settings_state[uid]
     step  = state["step"]
+
+    # When we are waiting for the cover command the user MUST send something
+    # like "/cover" or "/thumb" — that starts with "/", so we must NOT block
+    # it here.  For every other step we ignore slash-commands so they fall
+    # through to their own handlers (e.g. /settings, /anime, etc.).
+    if message.text and message.text.startswith("/") and step != "cover_add_cmd":
+        settings_state.pop(uid, None)   # clear stale state so bot isn't stuck
+        return
 
     # ── GFX: waiting for channel ──────────────────────────────────────────────
     if step == "gfx_add_ch":
@@ -253,22 +260,28 @@ async def settings_input(client: Client, message: Message):
             )
             return
 
-        # Store channel, now ask for command
-        state["pending_ch_id"]    = ch_id
-        state["pending_title"]    = title
-        state["step"]             = "cover_add_cmd"
+        state["pending_ch_id"] = ch_id
+        state["pending_title"] = title
+        state["step"]          = "cover_add_cmd"
 
         await message.reply_text(
-            f"✅ Channel: <b>{title}</b>\n\n"
+            f"✅ <b>Channel:</b> <code>{title}</code>\n\n"
             "Now send the <b>command</b> for this channel.\n"
-            "Example: <code>/cover</code> or <code>/thumb</code>",
+            "<b>Example:</b> <code>/cover</code> or <code>/thumb</code>",
             parse_mode=enums.ParseMode.HTML,
         )
         return
 
-    # ── Cover: waiting for command ────────────────────────────────────────────
+    # ── Cover: waiting for command (e.g. /cover or /thumb) ───────────────────
     if step == "cover_add_cmd":
         raw_cmd = (message.text or "").strip()
+        if not raw_cmd:
+            await message.reply_text(
+                "⚠️ Please send the command, e.g. <code>/cover</code>",
+                parse_mode=enums.ParseMode.HTML,
+            )
+            return
+
         if not raw_cmd.startswith("/"):
             raw_cmd = "/" + raw_cmd
 
@@ -295,12 +308,10 @@ async def settings_input(client: Client, message: Message):
 
 async def _resolve_channel(client: Client, message: Message) -> tuple[int | None, str]:
     """Return (channel_id, title) from forwarded message or text ID."""
-    # Forwarded from channel
     if message.forward_from_chat:
         chat = message.forward_from_chat
         return chat.id, chat.title or str(chat.id)
 
-    # Text: numeric ID
     text = (message.text or "").strip()
     if text.lstrip("-").isdigit():
         ch_id = int(text)
@@ -310,7 +321,6 @@ async def _resolve_channel(client: Client, message: Message) -> tuple[int | None
         except Exception:
             return ch_id, str(ch_id)
 
-    # Text: @username
     if text.startswith("@"):
         try:
             chat = await client.get_chat(text)
