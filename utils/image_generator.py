@@ -1,25 +1,25 @@
 """
-CrunchyRoll-style 1280x720 anime streaming banner.
+  CrunchyRoll-style 1280x720 anime streaming banner.
 
-Composition:
-  LEFT  (45% = 0-576px)  : SOLID DEEP BLACK — UI text zone
-  RIGHT (55% = 576-1280) : Anime key visual, character on far-right edge
+  Composition:
+    LEFT  (45% = 0-576px)  : SOLID DEEP BLACK — UI text zone
+    RIGHT (55% = 576-1280) : Anime key visual, character on far-right edge
 
-Gradient : 0-576 solid black | 576-960 smooth cinematic fade | 960+ transparent
-Character: positioned at far-right edge with heavy overflow (partially cropped)
-Glow     : amber ellipse behind character, GaussianBlur(120)
-Grading  : Contrast=1.20, Color=1.15, Sharpness=1.30
+  Gradient : 0-576 solid black | 576-960 smooth cinematic fade | 960+ transparent
+  Character: positioned at far-right edge with heavy overflow (partially cropped)
+  Glow     : amber ellipse behind character, GaussianBlur(120)
+  Grading  : Contrast=1.20, Color=1.15, Sharpness=1.30
 
-Layout (y positions):
-  NAV  : 0-52
-  Logo : x=40, y=60  (if logo_bytes provided — replaces title text)
-  Title: x=40, y=70  (if no logo)
-  Meta : title_bottom + 18
-  Desc : meta_bottom + 14
-  Genre: desc_bottom + 16
-  Lang : genre_bottom + 36
-  Watch: lang_bottom  + 48
-"""
+  Layout (y positions):
+    NAV  : 0-52
+    Logo : x=40, y=70  (if logo_bytes — Fanart ClearLOGO replaces title text)
+    Title: x=40, y=70  (if no logo)
+    Meta : title_bottom + 18
+    Desc : meta_bottom + 14
+    Genre: desc_bottom + 16
+    Lang : genre_bottom + 36
+    Watch: lang_bottom  + 48
+  """
 import io
 import os
 import textwrap
@@ -80,6 +80,15 @@ def _f(paths: list, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def _smallcaps(text: str) -> str:
+    """Convert lowercase letters to Unicode small capitals for clean thumbnail look."""
+    _MAP = str.maketrans(
+        "abcdefghijklmnopqrstuvwxyz",
+        "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀꜱᴛᴜᴠᴡxʏᴢ"
+    )
+    return text.translate(_MAP)
+
+
 def _shadow_text(draw, xy, text, font, fill=(255,255,255,255), shadow=(0,0,0,200), offset=3):
     """Draw text with drop-shadow."""
     sx, sy = xy[0] + offset, xy[1] + offset
@@ -87,7 +96,8 @@ def _shadow_text(draw, xy, text, font, fill=(255,255,255,255), shadow=(0,0,0,200
     draw.text(xy, text, font=font, fill=fill)
 
 
-def _wrap_to_px(draw, text, font, max_px):
+def _wrap_truncate(draw, text, font, max_px, max_lines=2):
+    """Wrap text to max_lines. Last line gets '...' if truncated."""
     words = text.split()
     lines, cur = [], ""
     for w in words:
@@ -97,10 +107,25 @@ def _wrap_to_px(draw, text, font, max_px):
         else:
             if cur:
                 lines.append(cur)
+                if len(lines) >= max_lines:
+                    cur = ""
+                    break
             cur = w
-    if cur:
+    if cur and len(lines) < max_lines:
         lines.append(cur)
-    return lines[:3]
+    elif cur and len(lines) >= max_lines:
+        last = lines[-1]
+        while last and draw.textbbox((0, 0), last + "...", font=font)[2] > max_px:
+            last = last.rsplit(" ", 1)[0]
+        lines[-1] = (last + "...") if last else "..."
+    result = []
+    for ln in lines:
+        if draw.textbbox((0, 0), ln, font=font)[2] > max_px:
+            while ln and draw.textbbox((0, 0), ln + "...", font=font)[2] > max_px:
+                ln = ln[:-1]
+            ln = ln + "..."
+        result.append(ln)
+    return result
 
 
 def _draw_logo(draw, x, y, text, font):
@@ -113,7 +138,7 @@ def _draw_logo(draw, x, y, text, font):
 
 
 def _gradient_button(canvas, x, y, w, h, radius, text, font):
-    """Draw orange→red gradient rounded button on canvas. Returns draw object."""
+    """Draw orange→red gradient rounded button on canvas."""
     strip = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     sd    = ImageDraw.Draw(strip)
     for xi in range(w):
@@ -131,9 +156,11 @@ def _gradient_button(canvas, x, y, w, h, radius, text, font):
     canvas.alpha_composite(shad, (x-5, y-5))
     canvas.alpha_composite(btn, (x, y))
     draw = ImageDraw.Draw(canvas)
-    bb   = draw.textbbox((0, 0), text, font=font)
-    tx   = x + (w - (bb[2]-bb[0])) // 2
-    ty   = y + (h - (bb[3]-bb[1])) // 2
+    bb = draw.textbbox((0, 0), text, font=font)
+    tw = bb[2] - bb[0]
+    th = bb[3] - bb[1]
+    tx = x + (w - tw) // 2 - bb[0]
+    ty = y + (h - th) // 2 - bb[1]
     draw.text((tx, ty), text, font=font, fill=(255, 255, 255, 255))
     return draw
 
@@ -142,7 +169,7 @@ def _composite_clearlogo(canvas: Image.Image, logo_bytes: bytes,
                           x: int, y: int, max_w: int, max_h: int) -> int:
     """
     Composite a Fanart.tv ClearLOGO (PNG with transparency) onto canvas.
-    The logo is scaled to fit within max_w x max_h, preserving aspect ratio.
+    Scales to fit within max_w x max_h preserving aspect ratio.
     Returns the bottom y coordinate of the placed logo.
     """
     try:
@@ -152,7 +179,7 @@ def _composite_clearlogo(canvas: Image.Image, logo_bytes: bytes,
         nw, nh = int(lw * scale), int(lh * scale)
         logo   = logo.resize((nw, nh), Image.LANCZOS)
 
-        # Add a very subtle drop shadow for readability over light art
+        # Subtle drop shadow for readability over any background
         shadow = Image.new("RGBA", (nw + 8, nh + 8), (0, 0, 0, 0))
         shadow.paste(Image.new("RGBA", (nw, nh), (0, 0, 0, 120)), (4, 4), logo)
         shadow = shadow.filter(ImageFilter.GaussianBlur(6))
@@ -160,7 +187,7 @@ def _composite_clearlogo(canvas: Image.Image, logo_bytes: bytes,
         canvas.alpha_composite(logo, (x, y))
         return y + nh
     except Exception:
-        return y  # If logo load fails, return unchanged y so text renders normally
+        return y  # logo load failed — caller will fall back to text title
 
 
 def make_anime_thumbnail(
@@ -180,46 +207,45 @@ def make_anime_thumbnail(
 ) -> bytes:
     scale = max(1.0, min(scale, 3.0))
 
-    # ── 1. Pure black canvas ──────────────────────────────────────────────────
+    # ── 1. Pure black canvas ─────────────────────────────────────────────────
     canvas = Image.new("RGBA", (W, H), (*DARK, 255))
 
-    # ── 2. Anime art — placed on RIGHT, character overflows right edge ────────
+    # ── 2. Anime art full background ─────────────────────────────────────────
     if art_bytes:
         art = Image.open(io.BytesIO(art_bytes)).convert("RGBA")
         aw, ah = art.size
-        fit = (H / ah) * scale
+        fit = max(W / aw, H / ah) * scale
         sw, sh = int(aw * fit), int(ah * fit)
         art = art.resize((sw, sh), Image.LANCZOS)
-        char_x = W - sw + int(sw * 0.22) + offset_x
-        char_x = max(LEFT_END - 80, min(char_x, W - 100))
-        oy     = max(0, min(offset_y, max(0, sh - H)))
-        crop   = art.crop((0, oy, sw, oy + H))
-        canvas.paste(crop, (char_x, 0), crop)
+        ox = max(0, min(offset_x, max(0, sw - W)))
+        oy = max(0, min(offset_y, max(0, sh - H)))
+        crop = art.crop((ox, oy, ox + W, oy + H))
+        canvas.paste(crop, (0, 0), crop)
 
-    # ── 3. Warm atmospheric glow ──────────────────────────────────────────────
+    # ── 3. Warm glow ─────────────────────────────────────────────────────────
     glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(glow).ellipse([(640, -60), (1380, 760)], fill=(*AMBER, 42))
+    ImageDraw.Draw(glow).ellipse([(640, -60), (1380, 760)], fill=(*AMBER, 30))
     glow = glow.filter(ImageFilter.GaussianBlur(120))
     canvas = Image.alpha_composite(canvas, glow)
 
-    # ── 4. Cinematic LEFT GRADIENT ────────────────────────────────────────────
+    # ── 4. Left gradient overlay ──────────────────────────────────────────────
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd   = ImageDraw.Draw(grad)
-    FADE_START = LEFT_END
-    FADE_END   = 960
+    FADE_START = 420
+    FADE_END   = 820
     for x in range(W):
         if x <= FADE_START:
-            alpha = 255
+            alpha = 195
         elif x <= FADE_END:
             t     = (x - FADE_START) / (FADE_END - FADE_START)
-            alpha = int(255 * (1.0 - t ** 1.6))
+            alpha = int(195 * (1.0 - t ** 1.4))
         else:
             alpha = 0
         if alpha > 0:
             gd.line([(x, 0), (x, H)], fill=(0, 0, 0, alpha))
-    grad_edge = grad.crop((FADE_START - 60, 0, FADE_END + 60, H))
-    grad_edge = grad_edge.filter(ImageFilter.GaussianBlur(28))
-    grad.paste(grad_edge, (FADE_START - 60, 0))
+    grad_edge = grad.crop((FADE_START - 40, 0, FADE_END + 40, H))
+    grad_edge = grad_edge.filter(ImageFilter.GaussianBlur(22))
+    grad.paste(grad_edge, (FADE_START - 40, 0))
     canvas = Image.alpha_composite(canvas, grad)
 
     # ── 5. Color grading ──────────────────────────────────────────────────────
@@ -229,115 +255,133 @@ def make_anime_thumbnail(
     base = ImageEnhance.Sharpness(base).enhance(1.30)
     canvas = base.convert("RGBA")
 
-    # ── 6. Nav bar ────────────────────────────────────────────────────────────
-    canvas.alpha_composite(Image.new("RGBA", (W, NAV_H), (0, 0, 0, 210)), (0, 0))
     draw = ImageDraw.Draw(canvas)
 
-    # ── 7. Fonts ──────────────────────────────────────────────────────────────
+    # ── 6. Fonts ──────────────────────────────────────────────────────────────
     bebas     = _ensure_bebas()
     f_titl_lg = ImageFont.truetype(bebas, 92) if bebas else _f(_BOLD, 82)
     f_titl_md = ImageFont.truetype(bebas, 78) if bebas else _f(_BOLD, 70)
     f_logo    = _f(_BOLD, 18)
-    f_nav     = _f(_REG,  17)
+    f_nav     = _f(_BOLD, 17)
     f_meta    = _f(_BOLD, 24)
-    f_desc    = _f(_REG,  21)
+    f_desc    = _f(_BOLD, 17)
     f_genre   = _f(_BOLD, 26)
     f_btn     = _f(_BOLD, 23)
     f_pill    = _f(_BOLD, 17)
     f_brand   = _f(_BOLD, 16)
     f_plus    = _f(_BOLD, 28)
 
-    # ── 8. Nav logo ───────────────────────────────────────────────────────────
+    # ── 7. Nav logo ───────────────────────────────────────────────────────────
     _draw_logo(draw, 18, 11, channel_name, f_logo)
 
-    # ── 9. Nav items ──────────────────────────────────────────────────────────
+    # ── 8. Nav bar — evenly spaced items ─────────────────────────────────────
+    logo_end_x = 18 + 15*2 + 9
+    logo_bb = draw.textbbox((logo_end_x, 11+3), channel_name, font=f_logo)
+    logo_right = logo_bb[2] + 28
+
     nav_items = ["Home", "Movies", "Animes", "TV Shows", "My List"]
-    nx = 280
-    for item in nav_items:
+    nav_widths = [draw.textbbox((0, 0), it, font=f_nav)[2] - draw.textbbox((0, 0), it, font=f_nav)[0]
+                  for it in nav_items]
+    total_nav_w = sum(nav_widths)
+    right_icons_x = W - 110
+    avail = right_icons_x - logo_right
+    gap = (avail - total_nav_w) // (len(nav_items) + 1)
+    gap = max(28, min(gap, 60))
+
+    nx = logo_right + gap
+    for i, item in enumerate(nav_items):
         active = item == "Animes"
         col    = (*ORANGE, 255) if active else (215, 215, 215, 215)
         draw.text((nx, 17), item, font=f_nav, fill=col)
-        bb  = draw.textbbox((nx, 17), item, font=f_nav)
-        iw  = bb[2] - bb[0]
+        iw = nav_widths[i]
         if active:
             draw.line([(nx, NAV_H - 4), (nx + iw, NAV_H - 4)],
                       fill=(*ORANGE, 255), width=2)
-        nx += iw + 55
+        nx += iw + gap
     draw.text((W - 96, 17), "⌕  🔔  👤", font=f_nav, fill=(200,200,200,200))
 
-    # ── 10. Title / ClearLOGO ─────────────────────────────────────────────────
+    # ── 9. Title / ClearLOGO ─────────────────────────────────────────────────
     TX, TY   = 40, 70
     MAX_TW   = 540
 
     if logo_bytes:
-        # Render the transparent Fanart.tv HD ClearLOGO instead of text title
-        # Max logo size: 480 wide, 160 tall — keeps it clear and large
+        # Fanart HD ClearLOGO — transparent PNG composited instead of text title
+        # Max 480×160px — large enough to read, small enough to leave room for metadata
         cy = _composite_clearlogo(canvas, logo_bytes, TX, TY, max_w=480, max_h=160)
-        draw = ImageDraw.Draw(canvas)   # refresh draw after alpha_composite
+        draw = ImageDraw.Draw(canvas)   # refresh draw handle after alpha_composite
         cy += 18
     else:
-        # Text title fallback
+        # Text title fallback (Bebas Neue, max 2 lines with "..." truncation)
         title_up = title.upper()
         if len(title_up) <= 16:
             f_t, lh = f_titl_lg, 100
         else:
             f_t, lh = f_titl_md, 88
 
-        lines = _wrap_to_px(draw, title_up, f_t, MAX_TW)
+        lines = _wrap_truncate(draw, title_up, f_t, MAX_TW, max_lines=2)
         for i, ln in enumerate(lines):
             _shadow_text(draw, (TX, TY + i * lh), ln, f_t,
                          fill=(255,255,255,255), shadow=(0,0,0,200), offset=4)
         cy = TY + len(lines) * lh + 18
 
-    # ── 11. Subtitle ──────────────────────────────────────────────────────────
+    # ── 10. Subtitle ──────────────────────────────────────────────────────────
     subtitle = f"{year}  •  {episodes} Episodes  •  Hindi #Official"
     _shadow_text(draw, (TX, cy), subtitle, f_meta,
                  fill=(240,240,240,245), shadow=(0,0,0,160), offset=2)
-    cy += draw.textbbox((0,0), subtitle, font=f_meta)[3] + 20
+    cy += draw.textbbox((0,0), subtitle, font=f_meta)[3] + 2
 
-    # ── 12. Description ───────────────────────────────────────────────────────
+    # ── 11. Description — up to 5 lines, smallcaps, centered in left zone ────
     if description:
-        for dl in textwrap.wrap(description, width=44)[:4]:
-            draw.text((TX, cy), dl, font=f_desc, fill=(210,210,210,218))
-            cy += 33
-        cy += 8
+        _PANEL_W = LEFT_END - TX
+        for dl in textwrap.wrap(description, width=55)[:5]:
+            sc_line = _smallcaps(dl)
+            lw = draw.textbbox((0, 0), sc_line, font=f_desc)[2]
+            lx = TX + max(0, (_PANEL_W - lw) // 2)
+            draw.text((lx, cy), sc_line, font=f_desc, fill=(210, 210, 210, 218))
+            cy += 22
+        cy += 4
 
-    # ── 13. Genres ────────────────────────────────────────────────────────────
+    # ── 12. Genres ────────────────────────────────────────────────────────────
     genre_str = "  |  ".join(genres[:4])
     if genre_str:
         _shadow_text(draw, (TX, cy), genre_str, f_genre,
                      fill=(255,255,255,255), shadow=(0,0,0,150), offset=2)
         cy += draw.textbbox((0,0), genre_str, font=f_genre)[3] + 38
 
-    # ── 14. Language pills ────────────────────────────────────────────────────
+    # ── 13. Language pills ────────────────────────────────────────────────────
     hindi = "✓  Hindi"
     hbb   = draw.textbbox((0,0), hindi, font=f_pill)
-    hw, hh = hbb[2]-hbb[0]+28, hbb[3]-hbb[1]+16
+    hw    = hbb[2] - hbb[0] + 28
+    hh    = hbb[3] - hbb[1] + 16
     draw.rounded_rectangle([(TX, cy), (TX+hw, cy+hh)],
                            radius=hh//2, fill=(45,45,55,240))
-    draw.text((TX+14, cy+8), hindi, font=f_pill, fill=(255,255,255,255))
-    draw.text((TX+hw+18, cy+8), "Japanese Original",
+    ty_pill = cy + (hh - (hbb[3] - hbb[1])) // 2 - hbb[1]
+    draw.text((TX+14, ty_pill), hindi, font=f_pill, fill=(255,255,255,255))
+    draw.text((TX+hw+18, ty_pill), "Japanese Original",
               font=f_pill, fill=(130,130,130,215))
     cy += hh + 48
 
-    # ── 15. Watch Now button ──────────────────────────────────────────────────
+    # ── 14. Watch Now button — text centred ───────────────────────────────────
     btn_txt = f"▶  Watch Now S{season:02d}"
     bbb     = draw.textbbox((0,0), btn_txt, font=f_btn)
-    bw      = bbb[2]-bbb[0] + 60
+    bw      = (bbb[2]-bbb[0]) + 60
     BTN_H   = 66
     draw = _gradient_button(canvas, TX, cy, bw, BTN_H, 20, btn_txt, f_btn)
 
-    # ── 16. Plus circle ───────────────────────────────────────────────────────
+    # ── 15. Plus circle — "+" perfectly centred ───────────────────────────────
     pr  = BTN_H // 2
     pcx = TX + bw + 20 + pr
     pcy = cy
-    draw.ellipse([(pcx-pr, pcy), (pcx+pr, pcy+BTN_H)],
-                 outline=(170,170,170,210), width=2)
-    pb  = draw.textbbox((0,0), "+", font=f_plus)
-    draw.text((pcx-(pb[2]-pb[0])//2, pcy+(BTN_H-(pb[3]-pb[1]))//2),
-              "+", font=f_plus, fill=(200,200,200,230))
+    draw.ellipse([(pcx - pr, pcy), (pcx + pr, pcy + BTN_H)],
+                 outline=(170, 170, 170, 210), width=2)
+    pb  = draw.textbbox((0, 0), "+", font=f_plus)
+    pw  = pb[2] - pb[0]
+    ph  = pb[3] - pb[1]
+    ptx = pcx - pw // 2 - pb[0]
+    pty = pcy + (BTN_H - ph) // 2 - pb[1]
+    draw.text((ptx, pty), "+", font=f_plus, fill=(200, 200, 200, 230))
 
-    # ── 17. Bottom-right branding ─────────────────────────────────────────────
+    # ── 16. Bottom-right branding ─────────────────────────────────────────────
     brbb = draw.textbbox((0,0), channel_name, font=f_brand)
     brw, brh = brbb[2]-brbb[0], brbb[3]-brbb[1]
     tg_r = 16
@@ -348,7 +392,7 @@ def make_anime_thumbnail(
     draw.text((bx+tg_r*2+10, by+tg_r-brh//2),
               channel_name, font=f_brand, fill=(230,230,230,215))
 
-    # ── 18. Export ────────────────────────────────────────────────────────────
+    # ── 17. Export ────────────────────────────────────────────────────────────
     buf = io.BytesIO()
     canvas.convert("RGB").save(buf, format="JPEG", quality=95, optimize=True)
     buf.seek(0)
@@ -356,34 +400,25 @@ def make_anime_thumbnail(
 
 
 # ── Spoiler background ────────────────────────────────────────────────────────
-def make_spoiler_bg(bg_bytes: bytes, channel: str) -> bytes:
-    img   = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
-    w, h  = img.size
-    ratio = max(1280 / w, 720 / h)
-    img   = img.resize((int(w*ratio), int(h*ratio)), Image.LANCZOS)
-    img   = img.crop((0, 0, 1280, 720))
 
-    ov  = Image.new("RGBA", (1280, 720), (0,0,0,0))
-    ovd = ImageDraw.Draw(ov)
-    for y in range(720):
-        if y > 500:
-            t = (y-500)/220
-            ovd.line([(0,y),(1280,y)], fill=(0,0,0,int(210*t)))
-    img = Image.alpha_composite(img, ov)
-
-    draw = ImageDraw.Draw(img)
-    f    = _f(_BOLD, 20)
-    text = f"@{channel}"
-    tbb  = draw.textbbox((0,0), text, font=f)
-    tw, th = tbb[2]-tbb[0], tbb[3]-tbb[1]
-    tx   = (1280-tw)//2
-    ty   = 720-th-24
-    pad  = 14
-    draw.rounded_rectangle([(tx-pad, ty-6),(tx+tw+pad, ty+th+6)],
-                           radius=6, fill=(0,0,0,185))
-    draw.text((tx, ty), text, font=f, fill=(255,255,255,255))
-
+def make_spoiler_bg(art_bytes: Optional[bytes]) -> bytes:
+    """
+    Dark blurred spoiler background — 1280x720.
+    Used as the spoiler image sent before the AniList info card.
+    """
+    canvas = Image.new("RGB", (W, H), DARK)
+    if art_bytes:
+        art = Image.open(io.BytesIO(art_bytes)).convert("RGB")
+        aw, ah = art.size
+        fit = max(W / aw, H / ah)
+        sw, sh = int(aw * fit), int(ah * fit)
+        art = art.resize((sw, sh), Image.LANCZOS)
+        ox = (sw - W) // 2
+        oy = (sh - H) // 2
+        canvas.paste(art.crop((ox, oy, ox + W, oy + H)))
+    canvas = canvas.filter(ImageFilter.GaussianBlur(18))
+    canvas = ImageEnhance.Brightness(canvas).enhance(0.35)
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=92)
+    canvas.save(buf, format="JPEG", quality=85)
     buf.seek(0)
     return buf.read()
