@@ -28,6 +28,7 @@ from pyrogram.types import (
 
 from config import TMDB_API_KEY, FANART_TV_KEY
 from utils.anilist import fetch_anilist
+from utils.extra_images import fetch_all_extra
 from utils.image_generator import make_anime_thumbnail, make_spoiler_bg
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ CHANNEL     = "CrunchyRollChannel"
 
 # ── Safe caption sender — falls back if blockquote not supported ─────────────
 def _strip_bq(text: str) -> str:
+    """Strip blockquote tags for Pyrogram versions that don't support them."""
     return (text
         .replace("<blockquote expandable>", "")
         .replace("<blockquote>", "")
@@ -48,6 +50,7 @@ def _strip_bq(text: str) -> str:
 
 async def _send_photo_caption(target, photo, caption, *, reply_markup=None,
                                has_spoiler=False, **kw):
+    """Send photo with HTML caption; retry without blockquote on parse error."""
     from pyrogram import enums
     kwargs = dict(parse_mode=enums.ParseMode.HTML)
     if reply_markup:
@@ -62,6 +65,7 @@ async def _send_photo_caption(target, photo, caption, *, reply_markup=None,
 
 
 async def _reply_caption(target, caption, *, reply_markup=None, **kw):
+    """Send text caption; retry without blockquote on parse error."""
     from pyrogram import enums
     kwargs = dict(parse_mode=enums.ParseMode.HTML)
     if reply_markup:
@@ -90,6 +94,7 @@ GFX_CAPTION = (
 
 # ── Short title helper ────────────────────────────────────────────────────────
 def _short_title(title: str) -> str:
+    """Return roughly the first half of the title (word-boundary)."""
     words = title.split()
     half  = max(1, len(words) // 2)
     return " ".join(words[:half])
@@ -169,7 +174,7 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
 
     logo_label = "✅ 🔤 Logo ON" if use_logo else ("🔤 Logo" if has_logo else "🔤 No Logo")
 
-    rows = [
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("◀️ ᴩʀᴇᴠ",         callback_data=f"an|prev|{uid}"),
             InlineKeyboardButton(f"🖼 {idx+1}/{tot}", callback_data="an|noop"),
@@ -194,8 +199,7 @@ def _preview_kb(uid: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(logo_label, callback_data=f"an|logo|{uid}"),
         ],
         [InlineKeyboardButton("✅  ᴅᴏɴᴇ", callback_data=f"an|done|{uid}")],
-    ]
-    return InlineKeyboardMarkup(rows)
+    ])
 
 
 def _post_kb(uid: int, gfx_done: bool = False, cover_done: bool = False) -> InlineKeyboardMarkup:
@@ -275,43 +279,88 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
             try:
                 sd = await _tmdb(sess, f"/tv/{tmdb_id}/season/{season}")
                 episodes = len(sd.get("episodes", [])) or sd.get("episode_count", 0)
+                # Season-specific year & description from TMDB
+                s_year = (sd.get("air_date") or "")[:4]
+                if s_year:
+                    year = s_year
+                s_overview = (sd.get("overview") or "").strip()
+                if s_overview:
+                    overview = s_overview
             except Exception:
                 episodes = details.get("number_of_episodes", 0)
         else:
             episodes, season = 1, 1
 
-        # ── Images: request no-language backdrops (language=null gives
-        #    the clean key-visual shots without burned-in title text) ──────────
+        # AniList: override year / episodes / description / genres
+        try:
+            from utils.anilist import fetch_anilist as _al
+            al = await _al(name, season=season)
+            if al:
+                if al.get("year"):
+                    year = al["year"]
+                if al.get("episodes"):
+                    episodes = al["episodes"]
+                if al.get("synopsis"):
+                    overview = al["synopsis"]
+                if al.get("genres"):
+                    genres = al["genres"]
+        except Exception:
+            pass
+
+        # Images: request no-language first (clean cinematic shots, no burned-in text)
         img_data = await _tmdb(
             sess, f"/{media}/{tmdb_id}/images",
             include_image_language="null,en",
         )
 
-        posters = [
-            f"{TMDB_POST}{p['file_path']}"
-            for p in sorted(img_data.get("posters", []),
-                            key=lambda x: x.get("vote_average", 0), reverse=True)[:8]
-        ]
-        # 4K originals, no-language first, then english-captioned as fallback
+        # Deduplicate by file_path so same artwork doesn't appear twice
+        seen_paths: set[str] = set()
+
+        # Season-specific images (stills/posters) from TMDB — put FIRST
+        season_backdrops: list[str] = []
+        season_posters:   list[str] = []
+        if not is_movie:
+            try:
+                s_img = await _tmdb(sess, f"/tv/{tmdb_id}/season/{season}/images")
+                for still in sorted(s_img.get("stills", []),
+                                    key=lambda x: x.get("vote_average", 0), reverse=True)[:12]:
+                    fp = still.get("file_path", "")
+                    if fp and fp not in seen_paths:
+                        seen_paths.add(fp)
+                        season_backdrops.append(f"{TMDB_BACK}{fp}")
+                for sp in sorted(s_img.get("posters", []),
+                                 key=lambda x: x.get("vote_average", 0), reverse=True)[:6]:
+                    fp = sp.get("file_path", "")
+                    if fp and fp not in seen_paths:
+                        seen_paths.add(fp)
+                        season_posters.append(f"{TMDB_POST}{fp}")
+            except Exception as _sie:
+                logger.warning("Season images fetch failed: %s", _sie)
+
+        # Show-level backdrops & posters — no-language first for clean art
         backdrops_raw = img_data.get("backdrops", [])
-        backdrops_no_lang = [
-            b for b in backdrops_raw
-            if not b.get("iso_639_1")           # null / empty = no language
-        ]
-        backdrops_rest = [
-            b for b in backdrops_raw
-            if b.get("iso_639_1")
-        ]
-        # Sort each group by vote_average desc
+        backdrops_no_lang = [b for b in backdrops_raw if not b.get("iso_639_1")]
+        backdrops_rest    = [b for b in backdrops_raw if b.get("iso_639_1")]
         backdrops_no_lang.sort(key=lambda x: x.get("vote_average", 0), reverse=True)
         backdrops_rest.sort(key=lambda x: x.get("vote_average", 0), reverse=True)
-        # Prefer no-language, top 8; append english-captioned as fallback
-        backdrop_urls = (
-            [f"{TMDB_BACK}{b['file_path']}" for b in backdrops_no_lang[:8]] +
-            [f"{TMDB_BACK}{b['file_path']}" for b in backdrops_rest[:4]]
-        )
 
-        all_images  = posters + backdrop_urls
+        backdrops: list[str] = []
+        for b in (backdrops_no_lang[:8] + backdrops_rest[:4]):
+            fp = b.get("file_path", "")
+            if fp and fp not in seen_paths:
+                seen_paths.add(fp)
+                backdrops.append(f"{TMDB_BACK}{fp}")
+
+        posters: list[str] = []
+        for p in sorted(img_data.get("posters", []),
+                        key=lambda x: x.get("vote_average", 0), reverse=True)[:8]:
+            fp = p.get("file_path", "")
+            if fp and fp not in seen_paths:
+                seen_paths.add(fp)
+                posters.append(f"{TMDB_POST}{fp}")
+
+        # Season-specific images come first, then show-level fill the rest
+        all_images = season_backdrops + season_posters + backdrops + posters
         fanart_bgs: list[str] = []
         logo_urls:  list[str] = []
 
@@ -327,33 +376,50 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
                     ) as fr:
                         fd = await fr.json()
 
-                    # 4K Fanart backgrounds
+                    fanart_wide: list[str] = []
                     for art in fd.get("showbackground", [])[:8]:
                         url = art.get("url", "")
                         if url:
                             fanart_bgs.append(url)
-
-                    # HD ClearLOGO — prefer English, fallback to any
-                    for art in sorted(fd.get("hdtvlogo", []),
-                                      key=lambda x: (x.get("lang", "") == "en", int(x.get("likes", 0))),
-                                      reverse=True)[:5]:
-                        url = art.get("url", "")
-                        if url:
-                            logo_urls.append(url)
-                    # Fallback: clearlogo (lower-res)
-                    if not logo_urls:
-                        for art in fd.get("clearlogo", [])[:3]:
-                            url = art.get("url", "")
-                            if url:
-                                logo_urls.append(url)
+                            fanart_wide.append(url)
+                    # Fanart wide landscape images at the FRONT
+                    if fanart_wide:
+                        all_images = fanart_wide + all_images
 
                     for key in ("tvposter", "characterart", "tvthumb"):
                         for art in fd.get(key, [])[:3]:
                             url = art.get("url", "")
                             if url and url not in all_images:
                                 all_images.append(url)
+
+                    # HD ClearLOGO — prefer English, fallback to any language
+                    for art in sorted(fd.get("hdtvlogo", []),
+                                      key=lambda x: (x.get("lang", "") == "en",
+                                                     int(x.get("likes", 0))),
+                                      reverse=True)[:5]:
+                        url = art.get("url", "")
+                        if url:
+                            logo_urls.append(url)
+                    if not logo_urls:
+                        for art in fd.get("clearlogo", [])[:3]:
+                            url = art.get("url", "")
+                            if url:
+                                logo_urls.append(url)
             except Exception as e:
                 logger.warning("FANART.TV: %s", e)
+
+        # Extra fan art: 20 free sources — Safebooru, Konachan, DuckDuckGo, etc.
+        try:
+            extra = await fetch_all_extra(title)
+            seen = set(all_images)
+            for url in extra:
+                if url not in seen:
+                    all_images.append(url)
+                    seen.add(url)
+            logger.info("Total images for '%s': %d (incl. %d extra)",
+                        title, len(all_images), len(extra))
+        except Exception as e:
+            logger.warning("Extra images fetch failed: %s", e)
 
         return {
             "title":       title,
@@ -363,7 +429,7 @@ async def _fetch_data_inner(name: str, season: int) -> dict:
             "genres":      genres,
             "description": overview,
             "images":      all_images,
-            "fanart_bgs":  fanart_bgs or backdrop_urls[:4],
+            "fanart_bgs":  fanart_bgs or backdrops[:4],
             "logo_urls":   logo_urls,
             "season":      season,
         }
@@ -374,7 +440,7 @@ async def _render(s: dict) -> Optional[bytes]:
     if not bg:
         return None
 
-    # Download logo if use_logo is enabled and we have logo URLs
+    # Download ClearLogo if use_logo is toggled on
     logo_bytes: Optional[bytes] = None
     if s.get("use_logo") and s.get("logo_urls"):
         logo_bytes = await _download(s["logo_urls"][0])
@@ -413,7 +479,7 @@ async def anime_cmd(client: Client, message: Message):
         return
 
     season = 1
-    m = re.search(r"\bS(\d{1,2})\b$", raw, re.IGNORECASE)
+    m = re.search(r"\bS(?:eason\s*)?(\d{1,2})\b$", raw, re.IGNORECASE)
     if m:
         season = int(m.group(1))
         query  = raw[:m.start()].strip()
@@ -468,7 +534,7 @@ async def anime_cmd(client: Client, message: Message):
         "chat_id":  message.chat.id,
     }
 
-    has_logo = bool(data.get("logo_urls"))
+    has_logo  = bool(data.get("logo_urls"))
     logo_note = "  •  🔤 Logo available" if has_logo else ""
 
     thumb = await _render(sessions[uid])
@@ -478,10 +544,10 @@ async def anime_cmd(client: Client, message: Message):
         sessions.pop(uid, None)
         return
 
-    photo_io      = io.BytesIO(thumb)
-    photo_io.name = "thumb.jpg"
+    ph      = io.BytesIO(thumb)
+    ph.name = "thumb.jpg"
     await message.reply_photo(
-        photo=photo_io,
+        photo=ph,
         caption=(
             f"🎨 <b>{data['title']}</b> — S{data['season']:02d}\n"
             f"<i>{', '.join(data['genres'][:3])}</i>\n\n"
@@ -666,7 +732,8 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     elif action == "logo":
         if not s.get("logo_urls"):
-            await cq.answer("⚠️ No ClearLogo available for this anime on Fanart.tv", show_alert=True)
+            await cq.answer("⚠️ No ClearLogo available for this anime on Fanart.tv",
+                            show_alert=True)
             return
         s["use_logo"] = not s.get("use_logo", False)
         state = "ON ✅" if s["use_logo"] else "OFF"
@@ -706,7 +773,7 @@ async def anime_cb(client: Client, cq: CallbackQuery):
         al       = await fetch_anilist(ps["title"])
         bg_urls  = ps["fanart_bgs"]
         bg_bytes = await _download(random.choice(bg_urls)) if bg_urls else None
-        spoiler  = make_spoiler_bg(bg_bytes, CHANNEL) if bg_bytes else None
+        spoiler  = make_spoiler_bg(bg_bytes) if bg_bytes else None
 
         al_cap = (
             _anilist_caption(al, ps["title"])
@@ -732,16 +799,28 @@ async def anime_cb(client: Client, cq: CallbackQuery):
 
     # ── Redraw preview ─────────────────────────────────────────────────────────
     if redraw:
-        thumb = await _render(s)
+        # Auto-skip broken image URLs — try up to len(images) before giving up
+        thumb = None
+        total = len(s["images"])
+        for attempt in range(total):
+            thumb = await _render(s)
+            if thumb:
+                break
+            logger.warning("Image load failed, skipping idx %d", s["img_idx"])
+            s["img_idx"] = (s["img_idx"] + 1) % total
+            s["offset_x"] = s["offset_y"] = 0
+
         if not thumb:
             try:
                 await cq.message.edit_caption(
-                    "❌ Image failed. Try next ▶️",
+                    "❌ No working images found. Try /anime again.",
                     parse_mode=enums.ParseMode.HTML,
                 )
             except MessageNotModified:
                 pass
             return
+
+        idx_display = s["img_idx"] + 1
         try:
             th_io      = io.BytesIO(thumb)
             th_io.name = "thumb.jpg"
@@ -749,9 +828,10 @@ async def anime_cb(client: Client, cq: CallbackQuery):
                 InputMediaPhoto(
                     media=th_io,
                     caption=(
-                        f"🎨 <b>{s['title']}</b> — S{s['season']:02d}\n"
+                        f"🎨 <b>{s['title']}</b> — S{s['season']:02d}  "
+                        f"<code>[{idx_display}/{total}]</code>\n"
                         f"<i>{', '.join(s['genres'][:3])}</i>\n\n"
-                        f"⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
+                        "⬆️⬇️⬅️➡️ Pan  •  ➕➖ Zoom  •  ◀️▶️ Swap image"
                     ),
                     parse_mode=enums.ParseMode.HTML,
                 ),
